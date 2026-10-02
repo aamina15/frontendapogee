@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ExternalLink, Clock, Layers, Play, Award, AlertCircle, Loader2 } from 'lucide-react';
+import { ExternalLink, Clock, Layers, Play, Award, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import { fetchGoalRoute } from '../services/api';
 
 export default function RouteScreen({ 
