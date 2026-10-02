@@ -38,11 +38,14 @@
 
   --font-display-lg: 'Plus Jakarta Sans', sans-serif;
   --font-headline-xl: 'Plus Jakarta Sans', sans-serif;
+  --font-headline-lg: 'Plus Jakarta Sans', sans-serif;
   --font-headline-md: 'Plus Jakarta Sans', sans-serif;
   --font-headline-sm: 'Plus Jakarta Sans', sans-serif;
   --font-body-lg: 'Inter', sans-serif;
   --font-body-md: 'Inter', sans-serif;
   --font-body-sm: 'Inter', sans-serif;
+  --text-body-lg: 1.125rem;
+  --text-body-sm: 0.875rem;
 }
 
 body {
@@ -85,4 +88,74 @@ body {
 
 .animate-slideLeft {
   animation: slideLeft 0.25s ease-out forwards;
+}
+
+/* Button Styles */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2.5 text-white font-semibold rounded-xl px-6 py-3.5 border border-indigo-300/30 shadow-lg shadow-indigo-600/20 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  background: linear-gradient(115deg, #6366f1, #4f46e5 65%, #465bd9);
+  box-shadow: 0 5px 24px #4f46e52b, inset 0 1px 0 #ffffff26;
+}
+.btn-primary:not(:disabled):hover { transform: translateY(-2px); filter: brightness(1.12); box-shadow: 0 9px 32px #6366f144; }
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2.5 bg-white/5 text-on-surface border border-white/15 font-semibold rounded-xl px-6 py-3.5 hover:bg-white/10 hover:border-secondary/40 active:scale-[0.98] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-ghost {
+  @apply text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-surface;
+}
+
+.btn-danger {
+  @apply bg-error text-on-error font-bold rounded-xl px-6 py-3.5 hover:bg-error/90 hover:shadow-lg hover:shadow-error/20 active:scale-[0.98] transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-error/50 focus:ring-offset-2 focus:ring-offset-surface;
+}
+
+.card-interactive {
+  @apply rounded-2xl bg-surface-container border border-outline-variant/60 shadow-xl hover:border-primary/40 hover:shadow-xl hover:shadow-primary/10 transition-all duration-300 cursor-pointer;
+}
+
+.input-field {
+  @apply w-full px-4 py-3.5 rounded-xl bg-surface-container-lowest border border-white/15 text-on-surface placeholder:text-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-secondary/25 focus:border-secondary/70 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.label-text {
+  @apply block text-sm font-semibold text-on-surface mb-2;
+}
+
+.section-container {
+  @apply max-w-7xl mx-auto px-4 lg:px-8;
+}
+
+.text-gradient {
+  @apply bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent;
+}
+
+button:not(:disabled), a { cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid #4cd7f6; outline-offset: 4px; }
+button:disabled { cursor: not-allowed; }
+select { color-scheme: dark; }
+.eyebrow { display: flex; align-items: center; gap: .5rem; color: #73dcef; font-size: .65rem; font-weight: 600; letter-spacing: .15em; }
+.intake-card { background: linear-gradient(135deg, #1a1d30, #131824 70%); }
+.intake-shell { position: relative; }
+.landing-page h2 { font-size: clamp(1.8rem, 3.2vw, 2.75rem); line-height: 1.18; letter-spacing: -.035em; }
+.landing-page .hero-title { font-size: clamp(2.6rem, 4.8vw, 4.4rem); line-height: 1.1; letter-spacing: -.045em; }
+.landing-page section[id] { scroll-margin-top: 5.5rem; }
+.landing-page h3 { line-height: 1.4; }
+.feature-card { transition: border-color .2s, transform .2s, box-shadow .2s; }
+.feature-card:hover { border-color: #6366f160; transform: translateY(-3px); box-shadow: 0 12px 36px #0003; }
+.mastery-step { min-width: 0; transition: border-color .2s, transform .2s; }
+.mastery-step:hover { border-color: #4cd7f655; transform: translateY(-3px); }
+.mastery-step:not(:last-child)::after { content: ''; position: absolute; background: linear-gradient(90deg, #6366f1, #4cd7f6); width: 1rem; height: 1px; right: -1.05rem; top: 2.5rem; opacity: .45; }
+#skill-graph { scroll-margin-top: 9rem; }
+@media (max-width: 1279px) and (min-width: 1024px) { .mastery-step:nth-child(3)::after { display: none; } }
+@media (max-width: 1023px) and (min-width: 640px) { .mastery-step:nth-child(2n)::after { display: none; } }
+@media (max-width: 639px) {
+  .mastery-step { flex-direction: row; align-items: start; gap: 1.25rem; }
+  .mastery-step > div:first-child { flex-direction: column; gap: .75rem; }
+  .mastery-step:not(:last-child)::after { width: 1px; height: 1rem; right: auto; left: 2.5rem; top: auto; bottom: -1.05rem; }
+  .journey-step { flex-direction: column; gap: .5rem; padding: .65rem .25rem; font-size: .6rem; }
+  .landing-page .hero-title { font-size: 2.8rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }

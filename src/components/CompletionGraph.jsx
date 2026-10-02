@@ -132,7 +132,7 @@ export default function CompletionGraph({
         setSelectedNodeId(dagRes.skills[0].id);
       }
     } catch (err) {
-      console.error('[APOGEE Graph API Error]', err);
+      console.warn('[ORBIT Graph API Error]', err.message);
       setError(err.message || 'Failed to load backend DAG');
     } finally {
       setLoading(false);
@@ -315,7 +315,7 @@ export default function CompletionGraph({
       {loading && (
         <div className="w-full min-h-[400px] rounded-2xl bg-surface-container-lowest border border-outline-variant/60 flex flex-col items-center justify-center gap-3 shadow-xl">
           <Loader2 className="w-10 h-10 text-primary animate-spin" />
-          <p className="text-sm font-bold text-on-surface font-headline-md">Synthesizing Prerequisite DAG from APOGEE Backend...</p>
+          <p className="text-sm font-bold text-on-surface font-headline-md">Synthesizing Prerequisite DAG from ORBIT Backend...</p>
           <p className="text-xs text-on-surface-variant">Running backend validation and Kahn's algorithm cycle detection</p>
         </div>
       )}
@@ -544,7 +544,7 @@ export default function CompletionGraph({
                   <Info className="w-4 h-4" /> Prerequisite Unlock Rule:
                 </div>
                 <p className="text-[11px] text-on-surface-variant">
-                  Only a <strong>Verified</strong> completion unlocks downstream prerequisite nodes in Apogee.
+                  Only a <strong>Verified</strong> completion unlocks downstream prerequisite nodes in ORBIT.
                 </p>
               </div>
 

@@ -92,8 +92,8 @@ def upsert_mastery(db: Session, payload: MasteryCreate) -> Mastery:
     return mastery
 
 
-def update_mastery(db: Session, mastery_id: int, payload: MasteryUpdate) -> Optional[Mastery]:
-    mastery = db.query(Mastery).filter(Mastery.id == mastery_id).first()
+def update_mastery(db: Session, goal_id: int, mastery_id: int, payload: MasteryUpdate) -> Optional[Mastery]:
+    mastery = db.query(Mastery).filter(Mastery.id == mastery_id, Mastery.goal_id == goal_id).first()
     if not mastery:
         return None
     for field, value in payload.model_dump(exclude_unset=True).items():

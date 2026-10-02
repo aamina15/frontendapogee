@@ -4,15 +4,18 @@ from pydantic import BaseModel, Field
 
 
 class MasteryCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+
     goal_id: int
     skill_id: int
     diagnostic_score: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 class MasteryUpdate(BaseModel):
+    # Assessment results can only be written by server-side quiz grading.
+    model_config = {"extra": "forbid"}
+
     diagnostic_score: Optional[float] = Field(None, ge=0.0, le=1.0)
-    verification_score: Optional[float] = Field(None, ge=0.0, le=1.0)
-    verified: Optional[bool] = None
 
 
 class MasteryRead(BaseModel):

@@ -137,7 +137,7 @@ Respond ONLY with JSON matching this exact structure:
 }}
 """
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
@@ -147,10 +147,10 @@ Respond ONLY with JSON matching this exact structure:
     }
 
     try:
-        with httpx.Client(timeout=15.0) as client:
-            resp = client.post(url, json=payload)
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(url, json=payload, headers={"x-goog-api-key": api_key})
             if resp.status_code != 200:
-                logger.warning(f"Gemini API returned HTTP {resp.status_code}: {resp.text}")
+                logger.warning("Gemini API returned HTTP %s", resp.status_code)
                 return get_fallback_dag_for_goal(goal_title)
 
             res_data = resp.json()
@@ -175,5 +175,5 @@ Respond ONLY with JSON matching this exact structure:
             }
 
     except Exception as e:
-        logger.error(f"Error calling Gemini API for DAG generation: {e}")
+        logger.error("Gemini DAG generation failed (%s)", type(e).__name__)
         return get_fallback_dag_for_goal(goal_title)

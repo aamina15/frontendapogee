@@ -1,49 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Sparkles, 
-  ExternalLink, 
-  CheckCircle2, 
-  Clock, 
-  ShieldCheck, 
-  HelpCircle, 
-  Layers, 
-  Info, 
-  Lock, 
-  Play, 
-  Award, 
-  Sliders, 
-  AlertCircle, 
-  ChevronDown, 
-  ChevronUp, 
-  Zap, 
-  Search,
-  Filter,
-  Check,
-  RotateCcw,
-  Loader2
-} from 'lucide-react';
+import { ExternalLink, Clock, Layers, Play, Award, AlertCircle, Loader2 } from 'lucide-react';
 import { fetchGoalRoute } from '../services/api';
 
 export default function RouteScreen({ 
+  mode = 'route',
+  onStartLearning,
   profile,
   goalId,
-  routeOptimizationMode, 
-  setRouteOptimizationMode, 
   onSwitchToGraphView, 
   onOpenProofModal,
   userState,
-  onUpdateResourceState,
   replanKey,
-  onGoalCreated,
 }) {
   const [routeData, setRouteData] = useState(null); // { goal_id, total_hours, total_weeks, hours_per_week, phases }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [expandedReasonId, setExpandedReasonId] = useState(null);
 
   const goalTitle = profile?.title || "Frontend Developer Internship";
-  const hoursPerWeek = profile?.commitment || 10;
-  const durationWeeks = profile?.sprints ? profile.sprints * 4 : 12;
+  const resources = routeData?.phases?.flatMap(phase => phase.resources) || [];
+  const nextSkill = resources.find(resource => resource.status === 'AVAILABLE' || resource.status === 'IN_PROGRESS');
 
   // Load real backend route & real learning resources
   const loadRoute = async () => {
@@ -53,7 +28,7 @@ export default function RouteScreen({
       const rData = await fetchGoalRoute(goalId);
       setRouteData(rData);
     } catch (err) {
-      console.error('[APOGEE Route API Error]', err);
+      console.warn('[ORBIT Route API Error]', err.message);
       setError(err.message || 'Failed to load backend route');
     } finally {
       setLoading(false);
@@ -63,10 +38,6 @@ export default function RouteScreen({
   useEffect(() => {
     loadRoute();
   }, [goalId, replanKey]);
-
-  const toggleReasonExpand = (rid) => {
-    setExpandedReasonId(expandedReasonId === rid ? null : rid);
-  };
 
   const handleOpenCourseLink = (resource) => {
     if (!resource.url) {
@@ -78,11 +49,21 @@ export default function RouteScreen({
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 py-6 flex flex-col gap-6">
+      <div className="pt-4 pb-2">
+        <p className="eyebrow mb-3">{mode === 'learn' ? '04 / PUT YOUR SKILLS INTO PRACTICE' : '03 / YOUR LEARNING PLAN'}</p>
+        <h1 className="text-3xl sm:text-4xl font-bold font-headline-lg tracking-tight">{mode === 'learn' ? 'Learn & Verify' : 'Your route forward'}</h1>
+        <p className="mt-3 text-sm text-on-surface-variant">{mode === 'learn' ? 'Open a resource, practice, then take a skill check to unlock what comes next.' : 'Review the sequence and time budget, then move into learning when you’re ready.'}</p>
+      </div>
+      {!loading && !error && mode === 'learn' && <section aria-label="Next skill" className="rounded-2xl border border-secondary/30 bg-gradient-to-br from-secondary/10 to-primary/5 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
+        <div><p className="eyebrow mb-2">{nextSkill ? 'READY FOR YOU' : 'YOUR PROGRESS'}</p><h2 className="text-xl font-semibold">{nextSkill?.target_skill_name || (resources.length && resources.every(r => r.status === 'VERIFIED') ? 'Every skill in this route is verified' : 'Check your prerequisite graph')}</h2><p className="text-sm text-on-surface-variant mt-2">{nextSkill ? 'This skill’s prerequisites are met. Learn at your pace and verify when ready.' : 'Your saved skill states are shown below.'}</p></div>
+        {nextSkill && <div className="flex flex-wrap gap-3 shrink-0"><button disabled={!nextSkill.url} onClick={() => handleOpenCourseLink(nextSkill)} className="btn-secondary text-sm">Open Resource<ExternalLink className="w-4 h-4" /></button><button onClick={() => onOpenProofModal({ id: nextSkill.skill_id, label: nextSkill.target_skill_name })} className="btn-primary text-sm">Verify Next Skill<Award className="w-4 h-4" /></button></div>}
+      </section>}
+      {!loading && !error && mode === 'route' && <div><button onClick={onStartLearning} className="btn-primary text-sm">Continue to Learn & Verify<Play className="w-4 h-4" /></button></div>}
       {/* Top Telemetry Header & Navigation Controls */}
       <div className="w-full rounded-2xl bg-surface-container border border-outline-variant/60 p-5 shadow-xl flex flex-col gap-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-outline-variant/40">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-on-surface font-headline-md">{goalTitle} Route · v{routeData?.version || 1}</h2>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-tertiary-container/30 text-tertiary border border-tertiary/30 font-bold">
                 REAL BACKEND RESOURCES
@@ -96,7 +77,7 @@ export default function RouteScreen({
           <div className="flex items-center gap-2">
             <button
               onClick={onSwitchToGraphView}
-              className="px-4 py-2.5 rounded-xl bg-primary text-on-primary font-bold text-xs flex items-center gap-2 hover:bg-primary/90 transition-all shadow-md shadow-indigo-900/30 cursor-pointer"
+              className="btn-secondary text-xs !px-4 !py-2.5"
             >
               <Layers className="w-4 h-4" />
               <span>Open Skill Completion Graph</span>
@@ -197,12 +178,11 @@ export default function RouteScreen({
 
               {/* Resources List in Phase */}
               <div className="flex flex-col gap-4">
-                {phase.resources.map((res, rIdx) => {
-                  const isExpanded = expandedReasonId === (res.id || rIdx);
+                {phase.resources.map((res) => {
 
                   return (
                     <div 
-                      key={res.id || rIdx}
+                      key={res.skill_id}
                       className="rounded-2xl border bg-surface-container border-outline-variant/60 shadow-md transition-all"
                     >
                       <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -259,7 +239,7 @@ export default function RouteScreen({
                           <button
                             disabled={res.status === 'LOCKED' || res.status === 'VERIFIED'}
                             onClick={() => onOpenProofModal({ id: res.skill_id, label: res.target_skill_name })}
-                            className="px-4 py-2 rounded-xl bg-primary-container text-white font-bold text-xs flex items-center justify-center gap-1.5 hover:bg-indigo-600 transition-colors shadow"
+                            className="btn-primary text-xs !px-4 !py-2 disabled:shadow-none"
                           >
                             <Award className="w-3.5 h-3.5" />
                             <span>{res.status === 'VERIFIED' ? 'VERIFIED' : res.status === 'LOCKED' ? 'LOCKED — Verify prerequisites' : 'Verify Skill'}</span>

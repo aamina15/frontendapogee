@@ -4,12 +4,15 @@ from sqlalchemy.orm import Session
 from db.database import get_db
 from schemas.mastery import MasteryCreate, MasteryRead, MasteryUpdate
 from services import crud
+from models.skill import Skill
 
 router = APIRouter(prefix="/api/goals", tags=["Mastery"])
 
 
 @router.post("/{goal_id}/mastery", response_model=MasteryRead, status_code=201)
 def upsert_mastery(goal_id: int, payload: MasteryCreate, db: Session = Depends(get_db)):
+    if not db.query(Skill).filter(Skill.id == payload.skill_id, Skill.goal_id == goal_id).first():
+        raise HTTPException(status_code=404, detail="Skill not found for this goal")
     payload.goal_id = goal_id
     return crud.upsert_mastery(db, payload)
 
@@ -21,7 +24,7 @@ def list_mastery(goal_id: int, db: Session = Depends(get_db)):
 
 @router.patch("/{goal_id}/mastery/{mastery_id}", response_model=MasteryRead)
 def update_mastery(goal_id: int, mastery_id: int, payload: MasteryUpdate, db: Session = Depends(get_db)):
-    mastery = crud.update_mastery(db, mastery_id, payload)
+    mastery = crud.update_mastery(db, goal_id, mastery_id, payload)
     if not mastery:
         raise HTTPException(status_code=404, detail="Mastery record not found")
     return mastery

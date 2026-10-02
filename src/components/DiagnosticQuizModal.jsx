@@ -50,7 +50,7 @@ export default function DiagnosticQuizModal({
       setMasteryVector(initialVector);
 
     } catch (err) {
-      console.error('[APOGEE Diagnostic Fetch Error]', err);
+      console.warn('[ORBIT Diagnostic Fetch Error]', err.message);
       setError(err.message || 'Failed to load backend diagnostic questions');
     } finally {
       setLoading(false);
@@ -100,7 +100,7 @@ export default function DiagnosticQuizModal({
 
         onCompleteDiagnostic(finalMasteryMap);
       } catch (err) {
-        console.error('[APOGEE Diagnostic Submit Error]', err);
+        console.warn('[ORBIT Diagnostic Submit Error]', err.message);
         setError(err.message || 'Failed to submit diagnostic answers');
       } finally {
         setSubmitting(false);
@@ -113,7 +113,7 @@ export default function DiagnosticQuizModal({
     return (
       <div className="w-full max-w-3xl mx-auto px-4 py-16 flex flex-col items-center justify-center text-center gap-4">
         <Loader2 className="w-10 h-10 text-secondary animate-spin" />
-        <h2 className="text-xl font-bold text-on-surface font-headline-md">Generating APOGEE Diagnostic Assessment...</h2>
+        <h2 className="text-xl font-bold text-on-surface font-headline-md">Generating ORBIT Diagnostic Assessment...</h2>
         <p className="text-xs text-on-surface-variant">Generating targeted questions for {goalTitle} on backend</p>
       </div>
     );

@@ -1,4 +1,4 @@
-// APOGEE Backend API Client Utility
+// ORBIT Backend API Client Utility
 // All calls go through this module — never put the base URL anywhere else.
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -35,7 +35,7 @@ export async function checkBackendHealth() {
     const data = await apiFetch('/health');
     return { ok: true, data };
   } catch (error) {
-    console.warn('[APOGEE API] Health check failed:', error.message);
+    console.warn('[ORBIT API] Health check failed:', error.message);
     return { ok: false, error: error.message };
   }
 }

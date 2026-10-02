@@ -1,4 +1,4 @@
-// Central domain data and presets for APOGEE
+// Central domain data and presets for ORBIT
 
 export const MISSION_PROFILES = [
   {
