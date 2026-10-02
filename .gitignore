@@ -35,20 +35,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Local configuration
-.env
-.env.*
-!.env.example
-
-# Databases
-*.db
-*.sqlite
-*.sqlite3
-
-# Dependencies and build output
-node_modules/
-dist/
-.venv/
-__pycache__/
-.pytest_cache/

@@ -20,6 +20,7 @@ It must **never** be merged with:
 | Keep internal `apogee` identifiers | Oct 2, 2026 | Avoid breaking changes; database tables, package names unchanged |
 | SQLite for dev, PostgreSQL-ready | Sep 2026 | Zero-config local dev; prod migration path exists |
 | Single-user `/api/goals/active` | Sep 2026 | MVP scope; auth = post-hackathon blocker |
+| **NO authentication for hackathon** | Oct 2, 2026 | **Explicitly deferred** — single-user MVP works perfectly; auth adds risk |
 | Gemini 3.5 Flash model | Oct 1, 2026 | Stable, supports JSON mode, 1M token context |
 | Deterministic fallback graphs | Sep 2026 | Honest UX when API unavailable; curated per domain |
 | 4-state skill engine (LOCKED→AVAILABLE→IN_PROGRESS→VERIFIED) | Sep 2026 | Clear mental model; all-prereqs rule prevents gaps |
@@ -186,12 +187,35 @@ test_state_engine.py             7 tests  ✅ 4-state rules
 
 ## Post-Hackathon Immediate Actions
 
-1. **Add authentication** (Cognito + JWT) — unblocks multi-user
-2. **Add user_id to Goal** — scope all queries
+1. **Add authentication** (Cognito + JWT) — unblocks multi-user (DEFERRED from hackathon)
+2. **Add user_id to Goal** — scope all queries (DEFERRED from hackathon)
 3. **Migrate to PostgreSQL** — production readiness
 4. **Exponential backoff for Gemini 503** — reliability
 5. **Frontend unit tests (Vitest + RTL)** — confidence
 6. **Landing page** — marketing
+
+---
+
+## Authentication Deferral (Oct 2, 2026)
+
+**Decision:** Explicitly defer authentication and multi-user support for the hackathon.
+
+**Assessment:** Full auth (User model, JWT, ownership checks on all endpoints, migrations, migrations, backfill) would take 4–6 hours minimum with high risk of breaking the demo. Current single-user flow is polished, tested, and demo-ready.
+
+**Deferred Items:**
+- User model + JWT auth (register/login/me/refresh)
+- `user_id` on `Goal` + cascade via FKs
+- Ownership enforcement on all `/api/goals/*` endpoints
+- `/api/goals/active` per-user scoping
+- Alembic migration + backfill existing goals to demo user
+
+**Post-Hackathon Plan:**
+1. Add authentication (Cognito + JWT) — unblocks multi-user
+2. Add user_id to Goal — scope all queries
+3. Migrate to PostgreSQL — production readiness
+4. Exponential backoff for Gemini 503 — reliability
+5. Frontend unit tests (Vitest + RTL) — confidence
+6. Landing page — marketing
 
 ---
 

@@ -134,7 +134,30 @@ export default function CalendarRePlanModal({
               </div>
             </div>
 
-            {receipt && <p role="status" className="text-amber-300 text-sm">{receipt.route.feasibility_message}</p>}
+            {receipt && (
+            <div role="status" className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
+              receipt.route.feasible && !receipt.route.missing_resources?.length
+                ? 'bg-tertiary/10 border-tertiary/30 text-tertiary'
+                : 'bg-amber-900/30 border-amber-500/30 text-amber-300'
+            }`}>
+              {receipt.route.missing_resources?.length > 0 ? (
+                <>
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>Missing resources for: <strong>{receipt.route.missing_resources.join(', ')}</strong>. Estimates used for scheduling.</span>
+                </>
+              ) : receipt.route.feasible ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                  <span>{receipt.route.feasibility_message}</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{receipt.route.feasibility_message}</span>
+                </>
+              )}
+            </div>
+          )}
             {/* Arrow preview */}
             {newHours !== currentHoursPerWeek && (
               <div className="flex items-center gap-2 text-xs font-semibold">

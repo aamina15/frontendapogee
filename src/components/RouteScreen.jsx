@@ -123,9 +123,30 @@ export default function RouteScreen({
         </div>
       </div>
 
-      {routeData && !loading && !error && <p role="status" className={`p-4 rounded-xl border ${routeData.feasible ? 'text-tertiary' : 'text-amber-300'}`}>
-        {routeData.feasibility_message}
-      </p>}
+      {routeData && !loading && !error && (
+          <div role="status" className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm ${
+            routeData.feasible && !routeData.missing_resources?.length
+              ? 'bg-tertiary/10 border-tertiary/30 text-tertiary'
+              : 'bg-amber-900/30 border-amber-500/30 text-amber-300'
+          }`}>
+            {routeData.missing_resources?.length > 0 ? (
+              <>
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>Missing resources for: <strong>{routeData.missing_resources.join(', ')}</strong>. Estimates used for scheduling.</span>
+              </>
+            ) : routeData.feasible ? (
+              <>
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <span>{routeData.feasibility_message}</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{routeData.feasibility_message}</span>
+              </>
+            )}
+          </div>
+        )}
       {/* Loading State */}
       {loading && (
         <div className="w-full min-h-[320px] rounded-2xl bg-surface-container-lowest border border-outline-variant/60 flex flex-col items-center justify-center gap-3 shadow-xl">

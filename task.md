@@ -70,8 +70,8 @@
 ### Phase 1: Production Hardening (Week 1-2)
 | Task | Effort | Dependencies |
 |------|--------|--------------|
-| Add authentication (Cognito + JWT) | M | None |
-| User-scoped goals (add `user_id` to Goal) | M | Auth |
+| ~~Add authentication (Cognito + JWT)~~ | M | None |
+| ~~User-scoped goals (add `user_id` to Goal)~~ | M | Auth |
 | Migrate to PostgreSQL | S | Docker/Cloud SQL |
 | Rate limiting on `/generate-graph` | S | Auth |
 | HTTPS + proper CORS | S | Domain/SSL |
@@ -101,7 +101,17 @@
 | White-label theming | M | Design system v2 |
 
 ---
-
+ 
+## 🚫 DEFERRED (Post-Hackathon)
+ 
+| Item | Reason | Status |
+|------|--------|--------|
+| User authentication (Cognito/JWT) | Out of scope for hackathon demo; single-user flow works perfectly | **Deferred** |
+| Multi-user goal isolation (`user_id` on Goal) | Requires auth + migrations + ownership checks | **Deferred** |
+| `/api/goals/active` per-user scoping | Currently returns global latest; single-user only | **Deferred** |
+ 
+---
+ 
 ## 🐛 KNOWN BUGS / TECH DEBT
 
 | ID | Issue | Severity | Workaround |

@@ -172,6 +172,42 @@ VERIFIED_RESOURCE_CATALOGUE: Dict[str, Dict[str, Any]] = {
         "url": "https://docs.docker.com/get-started/",
         "duration_hours": 8.0,
     },
+    "data_modeling": {
+        "title": "Kimball Data Modeling & Kimball University (free resources)",
+        "source": "Kimball Group",
+        "url": "https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/",
+        "duration_hours": 12.0,
+    },
+    "etl_pipelines": {
+        "title": "dbt Fundamentals & Analytics Engineering (free)",
+        "source": "dbt Labs",
+        "url": "https://courses.getdbt.com/courses/dbt-fundamentals",
+        "duration_hours": 8.0,
+    },
+    "orchestration": {
+        "title": "Apache Airflow Documentation — Getting Started",
+        "source": "Apache Airflow",
+        "url": "https://airflow.apache.org/docs/apache-airflow/stable/start.html",
+        "duration_hours": 10.0,
+    },
+    "airflow": {
+        "title": "Astronomer: Airflow Tutorial (free)",
+        "source": "Astronomer",
+        "url": "https://www.astronomer.io/docs/learn/airflow-fundamentals",
+        "duration_hours": 8.0,
+    },
+    "pyspark": {
+        "title": "PySpark Official Documentation — Getting Started",
+        "source": "Apache Spark",
+        "url": "https://spark.apache.org/docs/latest/api/python/getting_started/index.html",
+        "duration_hours": 14.0,
+    },
+    "distributed_computing": {
+        "title": "Databricks: Spark Fundamentals (free)",
+        "source": "Databricks Academy",
+        "url": "https://academy.databricks.com/collections/spark-fundamentals",
+        "duration_hours": 12.0,
+    },
     "git": {
         "title": "Pro Git Book (free)",
         "source": "git-scm.com",
@@ -343,6 +379,29 @@ _KEYWORD_ALIASES: List[tuple] = [
     ("gcp", "cloud_basics"),
     ("devops", "devops"),
     ("ci/cd", "devops"),
+
+    # ── Data Engineering ──────────────────────────────────────────────────────
+    ("data model", "data_modeling"),
+    ("schema design", "data_modeling"),
+    ("dimensional model", "data_modeling"),
+    ("kimball", "data_modeling"),
+    ("star schema", "data_modeling"),
+    ("snowflake schema", "data_modeling"),
+    ("etl", "etl_pipelines"),
+    ("elt", "etl_pipelines"),
+    ("pipeline", "etl_pipelines"),
+    ("data pipeline", "etl_pipelines"),
+    ("dbt", "etl_pipelines"),
+    ("airflow", "airflow"),
+    ("orchestration", "orchestration"),
+    ("workflow", "orchestration"),
+    ("scheduler", "orchestration"),
+    ("spark", "pyspark"),
+    ("pyspark", "pyspark"),
+    ("distributed computing", "distributed_computing"),
+    ("distributed", "distributed_computing"),
+    ("databricks", "distributed_computing"),
+    ("big data", "distributed_computing"),
 ]
 
 
