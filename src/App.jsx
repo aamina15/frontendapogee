@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Layers } from 'lucide-react';
 import Header from './components/Header';
 import IntakeScreen from './components/IntakeScreen';
 import DiagnosticQuizModal from './components/DiagnosticQuizModal';
+import SkillGapAnalysis from './components/SkillGapAnalysis';
 import RouteScreen from './components/RouteScreen';
 import CompletionGraph from './components/CompletionGraph';
 import ProofOfSkillModal from './components/ProofOfSkillModal';
@@ -11,7 +13,7 @@ import { MISSION_PROFILES, INITIAL_USER_STATE } from './data/mockData';
 import { checkBackendHealth, createGoal, getActiveGoal, generateGraphForGoal, fetchGraph, fetchGoalDiagnosticMastery, listRoutes } from './services/api';
 
 const stagePaths = ['goal', 'diagnose', 'route', 'learn'];
-const requestedStage = () => stagePaths.indexOf(window.location.hash.replace('#app/', '')) + 1;
+const requestedStage = () => ['#app/map', '#app/results'].includes(window.location.hash) ? 2 : stagePaths.indexOf(window.location.hash.replace('#app/', '')) + 1;
 
 export default function App() {
   const [showLanding, setShowLanding] = useState(() => !requestedStage());
@@ -25,9 +27,15 @@ export default function App() {
   const [error, setError] = useState(null);
   const [apiStatus, setApiStatus] = useState('checking');
   const [refreshKey, setRefreshKey] = useState(0);
-  const [graphViewMode, setGraphViewMode] = useState('skills');
   const [proof, setProof] = useState(null);
   const [replanOpen, setReplanOpen] = useState(false);
+  const [hasSavedProgress, setHasSavedProgress] = useState(false);
+  const [mapOpen, setMapOpen] = useState(window.location.hash === '#app/map');
+  const [intakeKey, setIntakeKey] = useState(0);
+  const [newGoalIntent, setNewGoalIntent] = useState(false);
+  const [diagnosticDone, setDiagnosticDone] = useState(false);
+  const [diagDepth, setDiagDepth] = useState('quick');
+  const [info, setInfo] = useState(null);
   const [userState, setUserState] = useState({ ...INITIAL_USER_STATE, readinessBand: null });
   const preset = MISSION_PROFILES.find(p => p.id === profileId) || MISSION_PROFILES[0];
   const profile = goal ? { ...preset, title: goal.title, commitment: goal.hours_per_week, duration_weeks: goal.duration_weeks, budget: goal.budget } : preset;
@@ -46,6 +54,7 @@ export default function App() {
     try {
       const saved = await getActiveGoal();
       setGoal(saved);
+      setHasSavedProgress(true);
       const savedGraph = await fetchGraph(saved.id).catch(err => {
         if (err.status === 404) return null;
         throw err;
@@ -53,14 +62,16 @@ export default function App() {
       setGraph(savedGraph);
       const mastery = await fetchGoalDiagnosticMastery(saved.id);
       const routes = await listRoutes(saved.id);
-      const canRoute = !!savedGraph && (mastery.mastery.length > 0 || routes.length > 0);
+      const canRoute = !!savedGraph && (mastery.mastery.some(m => m.assessed) || routes.length > 0 || localStorage.getItem(`orbit_diagnostic_decision_${saved.id}`) === 'skipped');
       setRouteReady(canRoute);
-      setMastery(mastery.mastery.map(m => m.score));
+      // A previously assessed goal reopens at its gap analysis, not the quiz.
+      setDiagnosticDone(canRoute);
+      setMastery(mastery.mastery.filter(m => m.assessed).map(m => m.score));
       const requested = requestedStage();
       const available = requested === 1 || (requested === 2 && savedGraph) || (requested >= 3 && canRoute);
       const restored = available ? requested : savedGraph ? (canRoute ? 3 : 2) : 1;
       setStep(restored);
-      if (requested) window.history.replaceState(null, '', `#app/${stagePaths[restored - 1]}`);
+      if (requested && !['#app/map', '#app/results'].includes(window.location.hash)) window.history.replaceState(null, '', `#app/${stagePaths[restored - 1]}`);
     } catch (err) {
       if (err.status !== 404) setError(err.message);
       if (requestedStage()) window.history.replaceState(null, '', '#app/goal');
@@ -74,23 +85,62 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const same = goal && goal.title === payload.title && goal.hours_per_week === payload.hours_per_week && goal.duration_weeks === payload.duration_weeks && goal.budget === payload.budget;
+      const same = !newGoalIntent && goal && goal.title === payload.title && goal.hours_per_week === payload.hours_per_week && goal.duration_weeks === payload.duration_weeks && goal.budget === payload.budget;
       const saved = same ? goal : await createGoal(payload);
       setGoal(saved);
+      setHasSavedProgress(true);
+      setNewGoalIntent(false);
+      setMapOpen(true);
+      // Visible outcome: reusing an identical goal restores it instead of silently duplicating.
+      setInfo(same ? 'Continuing with your saved goal — its skill map and progress were restored.' : null);
       if (!same) {
         setGraph(null);
         setRouteReady(false);
+        setDiagnosticDone(false);
+        setDiagDepth('quick');
         setUserState(prev => ({ ...prev, readinessBand: null }));
       }
       setGraph(await generateGraphForGoal(saved.id));
       setApiStatus('online');
       setStep(2);
       setShowLanding(false);
-      window.history.pushState(null, '', '#app/diagnose');
+      window.history.pushState(null, '', '#app/map');
       window.scrollTo({ top: 0, behavior: 'instant' });
     } catch (err) {
       setError(err.message);
     } finally { setBusy(false); }
+  };
+
+  // Resume returns the learner to the furthest stage their saved progress allows.
+  const handleStartLearning = () => {
+    setNewGoalIntent(false);
+    navigate(goal && graph ? (routeReady ? 3 : 2) : 1);
+    setMapOpen(!!graph && !routeReady);
+    if (graph && !routeReady) window.history.replaceState(null, '', '#app/map');
+  };
+  // Start New Goal always opens the intake form; nothing is deleted.
+  const handleStartNewGoal = () => {
+    setNewGoalIntent(true);
+    setIntakeKey(k => k + 1);
+    navigate(1);
+  };
+  const finishDiagnostic = mastery => {
+    if (mastery) setMastery(Object.values(mastery));
+    localStorage.setItem(`orbit_diagnostic_decision_${goal.id}`, mastery ? 'assessed' : 'skipped');
+    setMapOpen(false);
+    setRouteReady(true);
+    setDiagnosticDone(true);
+    refresh();
+    setStep(2);
+    window.history.replaceState(null, '', '#app/results');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  };
+  const reopenDiagnostic = (depth) => {
+    setMapOpen(false);
+    window.history.replaceState(null, '', '#app/diagnose');
+    setDiagDepth(depth || 'quick');
+    setDiagnosticDone(false);
+    window.scrollTo({ top: 0, behavior: 'instant' });
   };
 
   const navigate = next => {
@@ -99,6 +149,7 @@ export default function App() {
     setReplanOpen(false);
     setShowLanding(false);
     setStep(next);
+    if (next === 2) setMapOpen(false);
     window.history.pushState(null, '', `#app/${stagePaths[next - 1]}`);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
@@ -114,6 +165,7 @@ export default function App() {
       const allowed = next === 1 || (next === 2 && graph) || (next >= 3 && routeReady);
       setShowLanding(false);
       setStep(allowed ? next : 1);
+      setMapOpen(window.location.hash === '#app/map');
       setProof(null);
       setReplanOpen(false);
       if (!allowed) window.history.replaceState(null, '', '#app/goal');
@@ -127,23 +179,21 @@ export default function App() {
     };
   }, [graph, routeReady, restoring]);
   const refresh = () => setRefreshKey(k => k + 1);
-
-  const handleStartLearning = () => {
-    navigate(goal && graph ? (routeReady ? 3 : 2) : 1);
-  };
-  const finishDiagnostic = mastery => {
-    if (mastery) setMastery(Object.values(mastery));
-    setRouteReady(true);
-    refresh();
-    setStep(3);
-    window.history.pushState(null, '', '#app/route');
-    window.scrollTo({ top: 0, behavior: 'instant' });
+  const graphDetailsRef = useRef(null);
+  const openGraphDetails = () => {
+    if (graphDetailsRef.current) graphDetailsRef.current.open = true;
+    requestAnimationFrame(() => document.getElementById('skill-graph')?.scrollIntoView({ behavior: 'smooth' }));
   };
 
   if (showLanding) {
     return (
       <div className="min-h-screen bg-surface font-body-md text-on-surface">
-        <LandingPage onStartLearning={handleStartLearning} starting={restoring} />
+        <LandingPage
+          onStartLearning={handleStartLearning}
+          onStartNew={handleStartNewGoal}
+          canResume={hasSavedProgress && !!goal}
+          starting={restoring}
+        />
       </div>
     );
   }
@@ -155,16 +205,42 @@ export default function App() {
         {restoring ? <p className="p-10 text-center">Loading saved progress…</p> : <>
           {error && step !== 1 && <p role="alert" className="p-4 text-rose-300">{error}</p>}
           {apiStatus === 'offline' && <div role="alert" className="p-4 text-amber-300">Backend unavailable. Your saved progress will load when the connection returns. <button onClick={restore} className="underline">Retry connection</button></div>}
-          {step === 1 && <IntakeScreen currentProfile={profile} onSelectProfile={setProfileId} onStartDiagnostic={start} busy={busy} error={error} />}
+          {step === 1 && <IntakeScreen key={intakeKey} currentProfile={newGoalIntent ? null : profile} onSelectProfile={setProfileId} onStartDiagnostic={start} busy={busy} error={error} savedGoal={hasSavedProgress ? goal : null} onResume={handleStartLearning} restoring={restoring} />}
+          {step > 1 && info && <p role="status" className="max-w-6xl mx-auto px-4 pt-4 text-sm text-secondary">{info}</p>}
           {step > 1 && graph?.warning && <p role="status" className="max-w-6xl mx-auto p-4 text-amber-300">{graph.warning}</p>}
           {step > 1 && graph?.validation?.repaired && <p role="status" className="max-w-6xl mx-auto p-4 text-amber-300">A cycle in the generated graph was repaired before saving.</p>}
           {step === 2 && <>
-            <DiagnosticQuizModal goalId={goal.id} profile={profile} onSkipDiagnostic={() => finishDiagnostic()} onCompleteDiagnostic={finishDiagnostic} />
-            <CompletionGraph goalId={goal.id} profile={profile} graphViewMode={graphViewMode} setGraphViewMode={setGraphViewMode} onSelectNodeForProof={setProof} userState={userState} refreshKey={refreshKey} />
+            {mapOpen ? <section className="max-w-6xl mx-auto px-4 py-8"><h1 className="text-3xl font-bold mb-3">Your capability map</h1><p className="text-on-surface-variant mb-5">Inspect a skill and its prerequisites. Next, assess what you already know.</p><button className="btn-primary" onClick={() => { setMapOpen(false); reopenDiagnostic('quick'); }}>Start Diagnostic</button></section> : diagnosticDone ? (
+              <SkillGapAnalysis
+                goalId={goal.id}
+                profile={profile}
+                skipped={userState.readinessBand === null}
+                onContinue={() => navigate(3)}
+                onDeepenAssessment={() => reopenDiagnostic('deep')}
+                onTakeDiagnostic={() => reopenDiagnostic('quick')}
+              />
+            ) : (
+              <DiagnosticQuizModal goalId={goal.id} profile={profile} depth={diagDepth} onSkipDiagnostic={() => finishDiagnostic()} onCompleteDiagnostic={finishDiagnostic} />
+            )}
+            {mapOpen && <CompletionGraph goalId={goal.id} profile={profile} onSelectNodeForProof={setProof} userState={userState} refreshKey={refreshKey} onNavigateToRoute={routeReady ? () => navigate(3) : null} />}
           </>}
           {(step === 3 || step === 4) && <>
-            <RouteScreen mode={step === 4 ? 'learn' : 'route'} onStartLearning={() => navigate(4)} goalId={goal.id} profile={profile} userState={userState} replanKey={refreshKey} onOpenProofModal={setProof} onSwitchToGraphView={() => document.getElementById('skill-graph')?.scrollIntoView({ behavior: 'smooth' })} />
-            <section id="skill-graph"><CompletionGraph goalId={goal.id} profile={profile} graphViewMode={graphViewMode} setGraphViewMode={setGraphViewMode} onSelectNodeForProof={setProof} userState={userState} refreshKey={refreshKey} /></section>
+            <RouteScreen mode={step === 4 ? 'learn' : 'route'} graphData={graph} onStartLearning={() => navigate(4)} goalId={goal.id} profile={profile} userState={userState} replanKey={refreshKey} onOpenProofModal={setProof} onSwitchToGraphView={step === 3 ? openGraphDetails : () => document.getElementById('skill-graph')?.scrollIntoView({ behavior: 'smooth' })} />
+            {step === 3 ? (
+              <details ref={graphDetailsRef} className="max-w-7xl mx-auto px-4 w-full group">
+                <summary className="cursor-pointer select-none list-none flex items-center justify-between rounded-2xl bg-surface-container border border-outline-variant/60 p-4 text-sm font-semibold text-on-surface hover:border-primary/40 transition-colors">
+                  <span className="flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-secondary" />
+                    <span>Skill map (optional) — inspect prerequisites and skill details</span>
+                  </span>
+                  <span className="text-xs text-outline group-open:hidden">Show</span>
+                  <span className="text-xs text-outline hidden group-open:inline">Hide</span>
+                </summary>
+                <section id="skill-graph" className="mt-4"><CompletionGraph goalId={goal.id} profile={profile} onSelectNodeForProof={setProof} userState={userState} refreshKey={refreshKey} onNavigateToRoute={() => navigate(3)} /></section>
+              </details>
+            ) : (
+              <section id="skill-graph"><CompletionGraph goalId={goal.id} profile={profile} onSelectNodeForProof={setProof} userState={userState} refreshKey={refreshKey} onNavigateToRoute={() => navigate(3)} /></section>
+            )}
           </>}
         </>}
       </main>

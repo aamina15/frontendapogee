@@ -14,12 +14,14 @@ import {
 } from 'lucide-react';
 import { fetchDiagnostic, submitDiagnostic } from '../services/api';
 
-export default function DiagnosticQuizModal({ 
+export default function DiagnosticQuizModal({
   profile,
   goalId,
-  onCompleteDiagnostic, 
-  onSkipDiagnostic 
+  depth = 'quick',
+  onCompleteDiagnostic,
+  onSkipDiagnostic
 }) {
+  const [uncovered, setUncovered] = useState([]);
   const [questions, setQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
@@ -33,14 +35,15 @@ export default function DiagnosticQuizModal({
   const hoursPerWeek = profile?.commitment || 10;
   const durationWeeks = profile?.sprints ? profile.sprints * 4 : 12;
 
-  // Fetch real diagnostic questions from backend
+  // Fetch real diagnostic questions from backend (goal-aware distribution)
   const loadDiagnostic = async () => {
     setLoading(true);
     setError(null);
     try {
-      const diagRes = await fetchDiagnostic(goalId);
+      const diagRes = await fetchDiagnostic(goalId, depth);
       const fetchedQuestions = diagRes?.questions || [];
       setQuestions(fetchedQuestions);
+      setUncovered(diagRes.unassessed_skills || []);
 
       // Initialize mastery vector preview
       const initialVector = {};
@@ -59,7 +62,8 @@ export default function DiagnosticQuizModal({
 
   useEffect(() => {
     loadDiagnostic();
-  }, [goalId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goalId, depth]);
 
   const currentQ = questions[currentIdx];
 
@@ -140,14 +144,17 @@ export default function DiagnosticQuizModal({
   if (!currentQ) {
     return (
       <div className="w-full max-w-3xl mx-auto px-4 py-8 flex flex-col items-center justify-center text-center">
-        <Sparkles className="w-12 h-12 text-tertiary mb-3 animate-bounce" />
-        <h2 className="text-2xl font-bold text-on-surface">No Diagnostic Required for this Track</h2>
-        <p className="text-sm text-on-surface-variant mt-2 max-w-md">Your prior claims for this profile satisfy the baseline requirements.</p>
+        <Sparkles className="w-12 h-12 text-tertiary mb-3" />
+        <h2 className="text-2xl font-bold text-on-surface">No Diagnostic Questions for This Goal</h2>
+        <p className="text-sm text-on-surface-variant mt-2 max-w-md">
+          No assessment questions are available for this goal's skill graph yet. You can continue
+          now — skill checks (≥70%) remain the only way to verify skills and unlock prerequisites.
+        </p>
         <button
-          onClick={() => onCompleteDiagnostic(masteryVector)}
+          onClick={onSkipDiagnostic}
           className="mt-6 px-6 py-3 rounded-xl bg-primary text-on-primary font-bold shadow"
         >
-          Proceed to Phased Route & Graph
+          See My Skill Gap Analysis
         </button>
       </div>
     );
@@ -157,6 +164,7 @@ export default function DiagnosticQuizModal({
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-6 flex flex-col gap-6">
+      <p role="status" className="text-sm text-on-surface-variant">{questions.some(q => q.source === 'gemini') ? 'Includes validated AI question proposals.' : questions.some(q => q.source === 'legacy_bank') ? 'Previously saved assessment; question relevance has not been revalidated.' : 'Saved skill-specific question bank; no live AI generation is claimed.'} Questions are graded on the server. {uncovered.length > 0 && `No reliable questions available for: ${uncovered.join(', ')}. These skills remain UNASSESSED.`}</p>
       {/* Step 2 Progress Header */}
       <section className="w-full">
         <div className="grid grid-cols-4 gap-3">
@@ -203,7 +211,7 @@ export default function DiagnosticQuizModal({
               className="text-xs text-outline hover:text-on-surface underline transition-colors"
               type="button"
             >
-              Skip diagnostic (Widens confidence band)
+              Skip diagnostic — nothing is verified or unlocked
             </button>
           </div>
 
@@ -257,11 +265,11 @@ export default function DiagnosticQuizModal({
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Grading & Persisting Mastery...</span>
+                    <span>Grading on the server…</span>
                   </>
                 ) : (
                   <>
-                    <span>{isLast ? "Submit Diagnostic & Persist Vector" : "Next Diagnostic Question"}</span>
+                    <span>{isLast ? "Submit Diagnostic & See My Skill Gaps" : "Next Question"}</span>
                     <ChevronRight className="w-4 h-4" />
                   </>
                 )}

@@ -10,10 +10,14 @@ logger = logging.getLogger("apogee.diagnostic_service")
 
 def get_verification_questions_for_skill(skill_name: str, skill_slug: str = "") -> List[Dict[str, Any]]:
     """
-    Returns exactly 5 multiple-choice verification questions for a skill.
+    Returns five curated verification questions for supported skills; otherwise none.
     Correct answers (correct_index) are stored server-side only — never sent to frontend.
     """
     sn = skill_name.lower()
+    if 'test' in sn and any(t in sn for t in ('react', 'frontend', 'jest', 'rtl')):
+        sn = 'frontend testing'
+    elif 'react' in sn and any(t in sn for t in ('redux', 'zustand', 'state management')):
+        sn = 'state management redux'
 
     if "html" in sn or "css" in sn:
         return [
@@ -231,188 +235,137 @@ def get_verification_questions_for_skill(skill_name: str, skill_slug: str = "") 
              "correct_index": 1, "explanation": "loss.backward() triggers backpropagation and populates .grad attributes."},
         ]
     else:
-        # Generic 5-question fallback
-        return [
-            {"question": f"What is a core prerequisite concept in {skill_name}?",
-             "options": ["Syntax & Fundamentals", "Advanced Optimization", "Database Indexing", "Container Deployment"],
-             "correct_index": 0, "explanation": f"Understanding syntax and core primitives is essential for {skill_name}."},
-            {"question": f"Which best practice applies when applying {skill_name} in production?",
-             "options": ["Hardcode credentials", "Modular structured clean code", "Ignore exception handling", "Disable logging"],
-             "correct_index": 1, "explanation": "Modular code with robust error handling ensures production reliability."},
-            {"question": f"What does debugging {skill_name} code typically involve?",
-             "options": ["Random changes", "Systematic isolation and reproduction of issues",
-                         "Deleting the codebase", "Rewriting from scratch"],
-             "correct_index": 1, "explanation": "Debugging requires systematic isolation to reproduce and fix root causes."},
-            {"question": f"Which tool is most associated with testing in {skill_name}?",
-             "options": ["A spreadsheet", "Automated test frameworks", "Manual code review only", "Database triggers"],
-             "correct_index": 1, "explanation": "Automated tests catch regressions and confirm expected behavior."},
-            {"question": f"How does version control help when working with {skill_name}?",
-             "options": ["It stores database records", "It tracks changes, enables collaboration, and supports rollback",
-                         "It deploys to production", "It speeds up compilation"],
-             "correct_index": 1, "explanation": "Version control is essential for tracking changes and collaborating safely."},
-        ]
+        # Unknown skills remain unassessed; generic programming trivia is not proof.
+        return []
 
 
 def get_default_questions_for_skill(skill_name: str, skill_slug: str) -> List[Dict[str, Any]]:
+    bank = get_verification_questions_for_skill(skill_name, skill_slug)
+    return bank[2:4]
 
+
+# Goal-aware diagnostic sizing: the quick assessment asks ONE question per
+# skill (so the count reflects the graph) and the optional deeper assessment
+# tops up to two per skill. Caps keep even large graphs lightweight.
+QUICK_MAX_QUESTIONS = 10
+DEEP_MAX_QUESTIONS = 12
+
+
+def generate_and_save_diagnostic_questions(
+    db: Session, goal_id: int, depth: str = "quick"
+) -> List[DiagnosticQuestion]:
     """
-    Returns 2 targeted multiple choice questions with correct answer stored server-side.
-    """
-    sn = skill_name.lower()
+    Generates goal-aware diagnostic questions and saves them (including correct_index).
 
-    if "html" in sn or "css" in sn:
-        return [
-            {
-                "question": "Which HTML element is recommended for main navigation links?",
-                "options": ["<nav>", "<div>", "<section>", "<header>"],
-                "correct_index": 0,
-                "explanation": "The semantic <nav> tag specifies a section intended for navigation links."
-            },
-            {
-                "question": "In CSS Flexbox, which property aligns items along the main axis?",
-                "options": ["align-items", "justify-content", "place-content", "flex-direction"],
-                "correct_index": 1,
-                "explanation": "justify-content defines the alignment along the main axis in Flexbox."
-            }
-        ]
-    elif "javascript" in sn or "js" in sn or "es6" in sn:
-        return [
-            {
-                "question": "What is the return type of `typeof NaN` in JavaScript?",
-                "options": ["\"number\"", "\"nan\"", "\"undefined\"", "\"object\""],
-                "correct_index": 0,
-                "explanation": "NaN stands for Not-a-Number, but its Javascript primitive type is typeof 'number'."
-            },
-            {
-                "question": "Which array method creates a new array populated with the results of calling a provided function?",
-                "options": ["forEach()", "map()", "filter()", "reduce()"],
-                "correct_index": 1,
-                "explanation": "map() creates a new array populated with the results of calling a provided function on every element."
-            }
-        ]
-    elif "react" in sn:
-        return [
-            {
-                "question": "Which hook is used to handle side-effects in React functional components?",
-                "options": ["useState", "useEffect", "useMemo", "useCallback"],
-                "correct_index": 1,
-                "explanation": "useEffect lets you synchronize a component with an external system or side-effect."
-            },
-            {
-                "question": "What is the primary purpose of keys when rendering a list of elements in React?",
-                "options": ["To style list items", "To help React identify which items have changed, added, or removed", "To count array items", "To trigger global state updates"],
-                "correct_index": 1,
-                "explanation": "Keys give elements a stable identity across renders to optimize DOM diffing."
-            }
-        ]
-    elif "python" in sn:
-        return [
-            {
-                "question": "Which of the following built-in Python data structures is mutable?",
-                "options": ["Tuple", "List", "String", "Frozenset"],
-                "correct_index": 1,
-                "explanation": "Lists in Python are mutable, meaning their contents can be modified in place."
-            },
-            {
-                "question": "What does the `pass` statement do in Python?",
-                "options": ["Terminates the function", "Acts as a null syntax placeholder", "Skips to the next iteration", "Raises a SyntaxError"],
-                "correct_index": 1,
-                "explanation": "pass is a null operation; nothing happens when it executes."
-            }
-        ]
-    elif "math" in sn or "stats" in sn or "linear" in sn:
-        return [
-            {
-                "question": "What is the result of multiplying a 3x2 matrix by a 2x4 matrix?",
-                "options": ["3x4 matrix", "2x2 matrix", "3x2 matrix", "Cannot be multiplied"],
-                "correct_index": 0,
-                "explanation": "The inner dimensions match (2=2), resulting in a matrix of dimensions 3x4."
-            },
-            {
-                "question": "Which metric measures the spread of data relative to its mean?",
-                "options": ["Median", "Standard Deviation", "Mode", "Quantile"],
-                "correct_index": 1,
-                "explanation": "Standard deviation measures the amount of variation or dispersion of a set of values."
-            }
-        ]
-    elif "data" in sn or "pandas" in sn or "numpy" in sn:
-        return [
-            {
-                "question": "In Pandas, which method is used to remove missing values from a DataFrame?",
-                "options": ["fillna()", "dropna()", "isna()", "drop_duplicates()"],
-                "correct_index": 1,
-                "explanation": "dropna() removes rows or columns containing missing values."
-            },
-            {
-                "question": "What is the main advantage of NumPy arrays over standard Python lists?",
-                "options": ["Dynamic typing", "Vectorized contiguous memory operations", "Automatic database syncing", "Thread safety"],
-                "correct_index": 1,
-                "explanation": "NumPy arrays use contiguous C-memory blocks for vectorized numerical speed."
-            }
-        ]
-    else:
-        return [
-            {
-                "question": f"What is a core prerequisite concept in {skill_name}?",
-                "options": ["Syntax & Fundamentals", "Advanced Optimization", "Database Indexing", "Container Deployment"],
-                "correct_index": 0,
-                "explanation": f"Understanding syntax and core primitives is essential for mastering {skill_name}."
-            },
-            {
-                "question": f"Which best practice applies when applying {skill_name} in production?",
-                "options": ["Hardcode credentials", "Modular structured clean code", "Ignore exception handling", "Disable logging"],
-                "correct_index": 1,
-                "explanation": "Modular code with robust error handling ensures production reliability."
-            }
-        ]
+    Distribution (deterministic, coverage-first):
+      - quick (default): 1 question per skill, capped at QUICK_MAX_QUESTIONS.
+        Skills with validated AI or curated questions are assessed within the cap.
+      - deep: tops up existing questions to 2 per skill, capped at DEEP_MAX_QUESTIONS.
+        Existing questions are preserved; only missing second questions are added.
 
-
-def generate_and_save_diagnostic_questions(db: Session, goal_id: int) -> List[DiagnosticQuestion]:
-    """
-    Generates approx 2 questions per skill for the goal and saves to DB (including correct_index).
+    Skills beyond the cap keep zero questions — they stay honestly UNASSESSED
+    (no fabricated scores are ever written for them).
     """
     from db.database import lock_goal_write
     lock_goal_write(db, goal_id)
     existing = db.query(DiagnosticQuestion).filter(
         DiagnosticQuestion.goal_id == goal_id,
         ~DiagnosticQuestion.skill_slug.startswith("verif_")
-    ).all()
-    if existing:
-        return existing
+    ).order_by(DiagnosticQuestion.id).all()
 
-    skills = db.query(Skill).filter(Skill.goal_id == goal_id).all()
+    skills = db.query(Skill).filter(Skill.goal_id == goal_id).order_by(Skill.id).all()
     if not skills:
         return []
 
+    if existing and depth != "deep":
+        # Idempotent: a diagnostic for this goal already exists; return it unchanged.
+        return existing
+
+    from models.goal import Goal
+    from services.question_service import questions_for_skills
+    goal = db.get(Goal, goal_id)
+    existing_counts = {s.id: sum(q.skill_db_id == s.id for q in existing) for s in skills}
+    target = 2 if depth == 'deep' else 1
+    cap = DEEP_MAX_QUESTIONS if depth == 'deep' else QUICK_MAX_QUESTIONS
+    remaining = max(0, cap - len(existing))
+    counts = {s.id: 0 for s in skills}
+    for round_number in range(target):
+        for skill in skills:
+            if remaining and existing_counts[skill.id] + counts[skill.id] <= round_number:
+                counts[skill.id] += 1
+                remaining -= 1
+    additions = questions_for_skills(goal, skills, counts, [q.question for q in existing], 'diagnostic')
+    # Existing questions are immutable. The top-up loop indexes after them.
+    templates_by_skill = {s.id: [None] * existing_counts[s.id] + additions[s.id] for s in skills}
+
     created_questions = []
-    total_q_count = 0
-    max_questions = 10  # Cap total questions for lightweight diagnostic
 
-    for s in skills:
-        if total_q_count >= max_questions:
-            break
+    if existing:
+        # Deep top-up: round-robin one missing question per skill (in skill id
+        # order) until each skill has 2 or the cap is reached.
+        per_skill_count = {s.id: 0 for s in skills}
+        for q in existing:
+            if q.skill_db_id in per_skill_count:
+                per_skill_count[q.skill_db_id] += 1
+        total = len(existing)
+        changed = True
+        while changed and total < DEEP_MAX_QUESTIONS:
+            changed = False
+            for s in skills:
+                if total >= DEEP_MAX_QUESTIONS:
+                    break
+                used = per_skill_count[s.id]
+                if used < 2 and used < len(templates_by_skill[s.id]):
+                    q_data = templates_by_skill[s.id][used]
+                    q_row = DiagnosticQuestion(
+                        goal_id=goal_id,
+                        skill_db_id=s.id,
+                        skill_slug=f"skill_{s.id}",
+                        skill_name=s.name,
+                        question=q_data["question"],
+                        options=q_data["options"],
+                        correct_index=q_data["correct_index"],
+                        explanation=q_data["explanation"]
+                    )
+                    db.add(q_row)
+                    db.flush()
+                    created_questions.append(q_row)
+                    per_skill_count[s.id] += 1
+                    total += 1
+                    changed = True
+        db.commit()
+        return existing + created_questions
 
-        skill_slug = f"skill_{s.id}"
-        q_templates = get_default_questions_for_skill(s.name, skill_slug)
-
-        for q_data in q_templates:
-            if total_q_count >= max_questions:
+    # Fresh generation: round-robin across ALL skills first (coverage before depth).
+    per_skill_target = 2 if depth == "deep" else 1
+    cap = DEEP_MAX_QUESTIONS if depth == "deep" else QUICK_MAX_QUESTIONS
+    per_skill_count = {s.id: 0 for s in skills}
+    total = 0
+    changed = True
+    while changed and total < cap:
+        changed = False
+        for s in skills:
+            if total >= cap:
                 break
-
-            q_row = DiagnosticQuestion(
-                goal_id=goal_id,
-                skill_db_id=s.id,
-                skill_slug=skill_slug,
-                skill_name=s.name,
-                question=q_data["question"],
-                options=q_data["options"],
-                correct_index=q_data["correct_index"],
-                explanation=q_data["explanation"]
-            )
-            db.add(q_row)
-            db.flush()
-            created_questions.append(q_row)
-            total_q_count += 1
+            used = per_skill_count[s.id]
+            if used < per_skill_target and used < len(templates_by_skill[s.id]):
+                q_data = templates_by_skill[s.id][used]
+                q_row = DiagnosticQuestion(
+                    goal_id=goal_id,
+                    skill_db_id=s.id,
+                    skill_slug=f"skill_{s.id}",
+                    skill_name=s.name,
+                    question=q_data["question"],
+                    options=q_data["options"],
+                    correct_index=q_data["correct_index"],
+                    explanation=q_data["explanation"]
+                )
+                db.add(q_row)
+                db.flush()
+                created_questions.append(q_row)
+                per_skill_count[s.id] += 1
+                total += 1
+                changed = True
 
     db.commit()
     return created_questions
@@ -485,7 +438,8 @@ def grade_diagnostic_submission(
             "skill_id": stats["slug"],
             "skill_db_id": skill_db_id,
             "skill_name": stats["name"],
-            "score": score_pct
+            "score": score_pct,
+            "assessed": True,
         })
 
     db.commit()

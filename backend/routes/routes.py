@@ -11,6 +11,7 @@ from models.goal import Goal
 from models.skill import Skill, SkillDependency
 from models.route import Route
 from services.resource_service import get_or_create_resources_for_skills
+from services.coverage_service import calculate_coverage
 from routes.verification import _recalculate_states
 
 router = APIRouter(prefix="/api/goals", tags=["Routes & Planner"])
@@ -39,15 +40,37 @@ def _build_route(db, goal, hpw):
                 queue.append(child)
     if len(ordered) != len(skills):
         raise HTTPException(409, "The skill graph contains a cycle. A safe route cannot be generated.")
-    resources = {r["skill_id"]: r for r in get_or_create_resources_for_skills(db, goal.id)}
+
+    # Get ALL resources (may be multiple per skill: reading + video)
+    all_resources = get_or_create_resources_for_skills(db, goal.id)
+
+    # Group by skill_id for scheduling (pick primary: prefer reading, then video, then any)
+    resources_by_skill = {}
+    for r in all_resources:
+        sid = r["skill_id"]
+        if sid not in resources_by_skill:
+            resources_by_skill[sid] = []
+        resources_by_skill[sid].append(r)
+
+    # Pick primary resource for scheduling (prefer reading for comprehensive duration)
+    primary_resources = {}
+    for sid, res_list in resources_by_skill.items():
+        reading = next((r for r in res_list if r.get("format") == "reading"), None)
+        video = next((r for r in res_list if r.get("format") == "video"), None)
+        both = next((r for r in res_list if r.get("format") == "both"), None)
+        primary_resources[sid] = reading or both or video or res_list[0]
+
     states = {s["db_id"]: s["status"] for s in _recalculate_states(db, goal.id)}
     items = []
     elapsed = 0.0
     for sid in ordered:
-        r = resources[sid]
+        r = primary_resources[sid]
         hours = 0.0 if states[sid] == "VERIFIED" else r["duration_hours"]
-        items.append({**r, "target_skill_name": r["skill_name"], "status": states[sid],
-                      "remaining_hours": hours, "start_hour": elapsed, "end_hour": elapsed + hours})
+        # Include ALL resources for this skill in the item so frontend can filter
+        item = {**r, "target_skill_name": r["skill_name"], "status": states[sid],
+                "remaining_hours": hours, "start_hour": elapsed, "end_hour": elapsed + hours,
+                "all_formats": resources_by_skill.get(sid, [r])}
+        items.append(item)
         elapsed += hours
     weeks = math.ceil(elapsed / hpw)
     time_budget = hpw * goal.duration_weeks
@@ -65,7 +88,8 @@ def _build_route(db, goal, hpw):
             "missing_resources": gaps, "prerequisite_safe": True,
             "phases": [{"phase_num": 1, "title": "Prerequisite-ordered learning route",
                         "duration_weeks": weeks, "hours_total": elapsed,
-                        "skill_coverage": [r["skill_name"] for r in items], "resources": items}]}
+                        "skill_coverage": [r["skill_name"] for r in items], "resources": items}],
+            "coverage": calculate_coverage(db, goal.id)}
 
 
 def _latest(db, goal_id):
@@ -162,3 +186,12 @@ def replan_goal(goal_id: int, payload: ReplanRequest, db: Session = Depends(get_
                          "new_duration_weeks": round(r["remaining_hours"] / payload.hours_per_week, 1),
                          "change_type": "preserved_verified" if r["status"] == "VERIFIED" else "rescheduled"}
                         for r in items], "route": data}
+
+
+@router.get("/{goal_id}/coverage")
+def get_goal_coverage(goal_id: int, db: Session = Depends(get_db)):
+    """Get deterministic Verified Goal Coverage for a goal."""
+    goal = db.get(Goal, goal_id)
+    if not goal:
+        raise HTTPException(404, "Goal not found")
+    return calculate_coverage(db, goal_id)

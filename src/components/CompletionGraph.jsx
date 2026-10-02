@@ -1,52 +1,56 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Layers, 
-  Lock, 
-  CheckCircle2, 
-  Zap, 
-  Clock, 
-  AlertCircle, 
-  ShieldCheck, 
-  ArrowRight, 
-  Info, 
-  Award, 
-  RotateCcw,
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  Layers,
+  Lock,
+  AlertCircle,
+  Info,
+  Award,
   Check,
-  Search,
-  Sliders,
   ExternalLink,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  ChevronRight,
 } from 'lucide-react';
-import { fetchGraph, fetchGoalDiagnosticMastery } from '../services/api';
+import { fetchGraph, fetchGoalDiagnosticMastery, listResources } from '../services/api';
 
 /**
- * Computes topological depth and SVG canvas coordinates for any DAG.
+ * Content-aware Capability Map layout.
+ *
+ * Skills are placed by topological depth into horizontal bands of at most
+ * COLS_PER_BAND columns, so small graphs render compact and balanced while
+ * deep graphs wrap instead of overlapping. The SVG viewBox is sized from the
+ * actual content (columns used x bands), never from a fixed canvas, so there
+ * is no oversized empty area — and the map renders ~1:1 for readable labels,
+ * scrolling horizontally only when a graph genuinely needs more room.
  */
+const NODE_W = 176;
+const NODE_H = 64;
+const COL_PITCH = 200;      // horizontal distance between level columns
+const COLS_PER_BAND = 4;    // levels per horizontal band
+const MARGIN_X = 24;
+const MARGIN_Y = 30;
+const BAND_GAP = 44;        // vertical breathing room between bands
+const ROW_H = NODE_H + 14;  // vertical space when several skills share a level
+
 function computeDynamicNodeCoords(nodes, dependencies) {
-  if (!nodes || nodes.length === 0) return {};
+  if (!nodes || nodes.length === 0) return { coords: {}, width: 640, height: 320 };
 
   const depsMap = new Map();
   nodes.forEach(n => depsMap.set(n.id, new Set()));
-
   dependencies.forEach(dep => {
-    if (depsMap.has(dep.to)) {
-      depsMap.get(dep.to).add(dep.from);
-    }
+    if (depsMap.has(dep.to)) depsMap.get(dep.to).add(dep.from);
   });
 
   const depths = new Map();
   function getDepth(id, visited = new Set()) {
     if (depths.has(id)) return depths.get(id);
-    if (visited.has(id)) return 0; // Cycle safety guard
+    if (visited.has(id)) return 0; // cycle safety guard
     visited.add(id);
-
     const prereqs = Array.from(depsMap.get(id) || []);
     if (prereqs.length === 0) {
       depths.set(id, 0);
       return 0;
     }
-
     let maxPrereqDepth = 0;
     for (const p of prereqs) {
       maxPrereqDepth = Math.max(maxPrereqDepth, getDepth(p, new Set(visited)));
@@ -55,7 +59,6 @@ function computeDynamicNodeCoords(nodes, dependencies) {
     depths.set(id, d);
     return d;
   }
-
   nodes.forEach(n => getDepth(n.id));
 
   const levelGroups = new Map();
@@ -66,40 +69,50 @@ function computeDynamicNodeCoords(nodes, dependencies) {
   });
 
   const maxLevel = Math.max(0, ...Array.from(levelGroups.keys()));
+  const levelCount = maxLevel + 1;
+  const bands = Math.ceil(levelCount / COLS_PER_BAND);
+  const maxStack = Math.max(1, ...Array.from(levelGroups.values()).map(ids => ids.length));
+  const bandH = NODE_H + (maxStack - 1) * ROW_H + BAND_GAP;
+  const height = MARGIN_Y * 2 + bands * bandH - BAND_GAP;
 
   const coords = {};
-  const canvasWidth = 1180;
-  const canvasHeight = 360;
-  
-  const startX = 140;
-  const endX = 1040;
-  const xStep = maxLevel > 0 ? (endX - startX) / maxLevel : 0;
-
-  levelGroups.forEach((nodeIdsAtLevel, level) => {
-    const x = maxLevel === 0 ? canvasWidth / 2 : startX + level * xStep;
-    const count = nodeIdsAtLevel.length;
-
-    nodeIdsAtLevel.forEach((id, index) => {
-      let y;
-      if (count === 1) {
-        y = canvasHeight / 2;
-      } else {
-        const startY = 80;
-        const endY = 280;
-        y = startY + index * ((endY - startY) / (count - 1));
-      }
+  levelGroups.forEach((ids, level) => {
+    const band = Math.floor(level / COLS_PER_BAND);
+    const col = level % COLS_PER_BAND;
+    const x = MARGIN_X + NODE_W / 2 + col * COL_PITCH;
+    const count = ids.length;
+    const cy = MARGIN_Y + band * bandH + NODE_H / 2 + ((maxStack - 1) * ROW_H) / 2;
+    ids.forEach((id, i) => {
+      const y = count === 1 ? cy : cy - ((count - 1) * ROW_H) / 2 + i * ROW_H;
       coords[id] = { x: Math.round(x), y: Math.round(y) };
     });
   });
 
-  return coords;
+  // Width follows the widest band actually used (never a fixed canvas).
+  const colsUsed = Math.min(levelCount, COLS_PER_BAND);
+  const width = MARGIN_X * 2 + NODE_W + (colsUsed - 1) * COL_PITCH;
+  return { coords, width, height };
 }
 
-export default function CompletionGraph({ 
-  profile, 
-  graphViewMode, 
-  setGraphViewMode, 
+// Visual states map 1:1 to the ACTUAL backend states — nothing invented.
+function getStatusColor(status) {
+  switch (status) {
+    case 'Verified':
+      return { bg: 'bg-tertiary-container/30', border: 'border-tertiary', text: 'text-tertiary', stroke: '#4edea3', fill: 'rgba(78, 222, 163, 0.14)', pillText: '#003824' };
+    case 'In Progress':
+      return { bg: 'bg-amber-950/40', border: 'border-amber-400', text: 'text-amber-400', stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.13)', pillText: '#3a2a00' };
+    case 'Available':
+      return { bg: 'bg-secondary-container/20', border: 'border-secondary', text: 'text-secondary', stroke: '#4cd7f6', fill: 'rgba(76, 215, 246, 0.10)', pillText: '#003640' };
+    case 'Locked':
+    default:
+      return { bg: 'bg-surface-container-low', border: 'border-outline-variant', text: 'text-on-surface-variant', stroke: '#5a5f6e', fill: 'rgba(23, 27, 38, 0.85)', pillText: '#c7c4d8' };
+  }
+}
+
+export default function CompletionGraph({
+  profile,
   onSelectNodeForProof,
+  onNavigateToRoute,
   userState,
   goalId,
   refreshKey,
@@ -108,10 +121,14 @@ export default function CompletionGraph({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const detailRef = useRef(null);
+  const selectNode = id => {
+    setSelectedNodeId(id);
+    requestAnimationFrame(() => { detailRef.current?.focus({ preventScroll: true }); detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); });
+  };
+  const [routeResources, setRouteResources] = useState({}); // skill_id -> real resource entries
 
   const goalTitle = profile?.title || "Frontend Developer Internship";
-  const hoursPerWeek = profile?.commitment || 10;
-  const durationWeeks = profile?.sprints ? profile.sprints * 4 : 12;
 
   // Fetch real DAG and persisted diagnostic mastery from backend
   const fetchBackendGraph = async () => {
@@ -120,20 +137,22 @@ export default function CompletionGraph({
     try {
       const dagRes = await fetchGraph(goalId);
 
-      // 3. Fetch persisted diagnostic mastery for page refresh retention
-      const masteryRes = await fetchGoalDiagnosticMastery(goalId).catch(() => ({ mastery: [] }));
-      
+      // Fetch persisted diagnostic mastery for page refresh retention
+      const masteryRes = await fetchGoalDiagnosticMastery(goalId);
+
+      const resourceRows = await Promise.all(dagRes.skills.map(async skill => [skill.db_id, await listResources(skill.db_id)]));
+      setRouteResources(Object.fromEntries(resourceRows));
       setGraphData({
         ...dagRes,
         masteries: masteryRes?.mastery || []
       });
-      
+
       if (dagRes?.skills && dagRes.skills.length > 0) {
-        setSelectedNodeId(dagRes.skills[0].id);
+        setSelectedNodeId(current => dagRes.skills.some(s => s.id === current) ? current : dagRes.skills[0].id);
       }
     } catch (err) {
       console.warn('[ORBIT Graph API Error]', err.message);
-      setError(err.message || 'Failed to load backend DAG');
+      setError(err.message || 'Failed to load your skill map');
     } finally {
       setLoading(false);
     }
@@ -144,7 +163,6 @@ export default function CompletionGraph({
   }, [goalId, refreshKey]);
 
   // Map backend skills -> graph nodes
-  // Map backend dependencies -> graph edges
   const { nodes, dependencies } = useMemo(() => {
     if (!graphData || !graphData.skills) return { nodes: [], dependencies: [] };
 
@@ -152,27 +170,27 @@ export default function CompletionGraph({
     const rawDeps = graphData.dependencies || [];
     const masteriesList = graphData.masteries || [];
 
-    // Map DB skill_id, skill_db_id, or name -> score
+    // Map DB skill_id, skill_db_id, or name -> { score, assessed }
     const masteryMap = {};
     masteriesList.forEach(m => {
-      if (m.skill_id) masteryMap[m.skill_id] = m.score;
-      if (m.skill_db_id) masteryMap[`skill_${m.skill_db_id}`] = m.score;
-      if (m.skill_name) masteryMap[m.skill_name.toLowerCase()] = m.score;
+      const entry = { score: m.score, assessed: m.assessed !== false };
+      if (m.skill_id) masteryMap[m.skill_id] = entry;
+      if (m.skill_db_id) masteryMap[`skill_${m.skill_db_id}`] = entry;
+      if (m.skill_name) masteryMap[m.skill_name.toLowerCase()] = entry;
     });
 
     const mappedNodes = rawSkills.map((s) => {
-      // Find prerequisite skill IDs (where to == s.id)
       const prereqIds = rawDeps
         .filter((d) => d.to === s.id)
         .map((d) => d.from);
 
-      // Score from diagnostic/masteries
-      const score = masteryMap[s.id] ?? masteryMap[`skill_${s.db_id}`] ?? masteryMap[(s.name || '').toLowerCase()] ?? 0;
+      // Diagnostic estimate: only present when the skill was actually assessed
+      const m = masteryMap[s.id] ?? masteryMap[`skill_${s.db_id}`] ?? masteryMap[(s.name || '').toLowerCase()];
+      const score = m?.assessed ? m.score : null;
 
       // Backend status is source of truth (AVAILABLE, LOCKED, IN_PROGRESS, VERIFIED)
       let rawStatus = (s.status || (prereqIds.length === 0 ? 'AVAILABLE' : 'LOCKED')).toUpperCase();
 
-      // Format for UI helper
       let displayStatus = 'Locked';
       if (rawStatus === 'VERIFIED') displayStatus = 'Verified';
       else if (rawStatus === 'IN_PROGRESS') displayStatus = 'In Progress';
@@ -182,304 +200,297 @@ export default function CompletionGraph({
         id: s.id || `skill_${s.db_id || s.name}`,
         db_id: s.db_id,
         label: s.name || s.id || 'Unnamed Skill',
-        category: s.target_level || 'Core Skill',
         level: s.target_level || 'Proficient',
         importance: s.importance ?? 1.0,
-        mastery: score,
+        mastery: score, // null = not assessed (never fabricate 0%)
         status: displayStatus,
+        state: rawStatus,
         deps: prereqIds
       };
     });
 
-
     return { nodes: mappedNodes, dependencies: rawDeps };
   }, [graphData]);
 
-
-  // Compute SVG layout coordinates dynamically
-  const nodeCoords = useMemo(() => {
+  // Content-aware layout coordinates
+  const { coords: nodeCoords, width: mapWidth, height: mapHeight } = useMemo(() => {
     return computeDynamicNodeCoords(nodes, dependencies);
   }, [nodes, dependencies]);
 
-  // Safely find selected node
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) || nodes[0] || {
     id: 'none',
     label: 'No Skill Selected',
-    category: 'N/A',
     level: 'N/A',
-    mastery: 0,
+    mastery: null,
     status: 'Locked',
+    state: 'LOCKED',
     deps: []
   };
 
-  // Derive node status color helpers
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Verified':
-        return { bg: 'bg-tertiary-container/30', border: 'border-tertiary', text: 'text-tertiary', stroke: '#4edea3', fill: 'rgba(78, 222, 163, 0.15)' };
-      case 'Completed':
-        return { bg: 'bg-secondary-container/30', border: 'border-secondary', text: 'text-secondary', stroke: '#4cd7f6', fill: 'rgba(76, 215, 246, 0.15)' };
-      case 'In Progress':
-        return { bg: 'bg-amber-950/40', border: 'border-amber-400', text: 'text-amber-400', stroke: '#f59e0b', fill: 'rgba(245, 158, 11, 0.15)' };
-      case 'Available':
-        return { bg: 'bg-surface-container-high', border: 'border-secondary/60', text: 'text-secondary', stroke: '#4cd7f6', fill: 'rgba(38, 42, 53, 0.8)' };
-      case 'Needs Review':
-        return { bg: 'bg-rose-950/40', border: 'border-rose-400', text: 'text-rose-400', stroke: '#f43f5e', fill: 'rgba(244, 63, 94, 0.15)' };
-      case 'Locked':
-      default:
-        return { bg: 'bg-surface-container-low', border: 'border-outline-variant/40', text: 'text-outline', stroke: '#464555', fill: 'rgba(23, 27, 38, 0.8)' };
+  const resourcesFor = (node) => routeResources[node?.db_id] || [];
+
+  // Data-driven, honest one-line description (no invented copy)
+  const describeSkill = (node) => {
+    if (node.state === 'VERIFIED') return 'Mastery demonstrated — counts toward Verified Coverage.';
+    if (node.state === 'IN_PROGRESS') return 'Started and in your plan — verify when you are ready.';
+    if (node.state === 'AVAILABLE') return 'All prerequisites met — ready to learn and verify.';
+    if (node.deps?.length) {
+      const blocking = node.deps.filter(depId => nodes.find(n => n.id === depId)?.state !== 'VERIFIED');
+      return blocking.length
+        ? `Waiting on ${blocking.length} prerequisite${blocking.length > 1 ? 's' : ''} before it can be verified.`
+        : 'Prerequisites verified — unlocking.';
     }
+    return 'Foundational skill — no prerequisites.';
   };
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-6 flex flex-col gap-6">
-      {/* Header Controls & Toggle */}
+    <div className="w-full max-w-7xl mx-auto px-4 py-6 flex flex-col gap-5">
+      {/* Header */}
       <div className="w-full rounded-2xl bg-surface-container border border-outline-variant/60 p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-on-surface font-headline-md">Skill & Capability Graph</h2>
+            <h2 className="text-xl font-bold text-on-surface font-headline-md">Your Capability Map</h2>
             <span className="text-[10px] font-bold text-tertiary bg-tertiary-container/30 border border-tertiary/40 px-2.5 py-0.5 rounded-full uppercase">
-              {graphData?.validation?.acyclic ? 'BACKEND DAG ACYCLIC' : 'BACKEND LIVE DATA'}
+              {graphData?.validation?.acyclic ? 'Prerequisites validated' : 'Prerequisites validated — cycle repaired'}
             </span>
           </div>
           <p className="text-xs text-on-surface-variant mt-1">
-            Saved prerequisite graph for: <strong className="text-primary">{goalTitle}</strong>
+            Skill map for: <strong className="text-primary">{goalTitle}</strong>
           </p>
         </div>
 
-        {/* View Switcher & Refresh Button */}
         <div className="flex items-center gap-2">
           <button
             onClick={fetchBackendGraph}
             disabled={loading}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-container-high hover:bg-surface-container-highest text-on-surface border border-outline-variant/50 flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            title="Refresh backend DAG"
+            title="Reload your saved skill map"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-secondary ${loading ? 'animate-spin' : ''}`} />
-            <span>Refresh Graph</span>
+            <span>Refresh map</span>
           </button>
 
-          <div className="flex items-center gap-1 bg-surface-container-lowest p-1 rounded-xl border border-outline-variant/50">
-            <button
-              onClick={() => setGraphViewMode('skills')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                graphViewMode === 'skills'
-                  ? 'bg-primary text-on-primary font-bold shadow'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              Skills DAG
-            </button>
-            <button
-              onClick={() => setGraphViewMode('courses')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                graphViewMode === 'courses'
-                  ? 'bg-primary text-on-primary font-bold shadow'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              Course Prerequisites
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* Legend Bar */}
+      {/* Status key */}
       <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-surface-container-high border border-outline-variant/40 text-xs">
-        <span className="font-bold text-outline uppercase tracking-wider text-[11px]">Node Status Legend:</span>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-1.5">
+        <span className="font-bold text-outline uppercase tracking-wider text-[11px]">Status key</span>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full bg-tertiary border border-tertiary" />
-            <span className="text-on-surface font-medium">Verified (Passed)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-secondary border border-secondary" />
-            <span className="text-on-surface font-medium">Completed (Self)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
+            <span className="text-on-surface font-medium">Verified — passed skill check</span>
+          </span>
+          <span className="flex items-center gap-1.5">
             <span className="w-3 h-3 rounded-full bg-amber-400 border border-amber-400" />
-            <span className="text-on-surface font-medium">In Progress</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-surface-container-highest border border-secondary" />
-            <span className="text-on-surface font-medium">Available (Root)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-surface-container-low border border-outline" />
-            <span className="text-on-surface-variant font-medium">Locked (Prereq Required)</span>
-          </div>
+            <span className="text-on-surface font-medium">In progress</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-secondary border border-secondary" />
+            <span className="text-on-surface font-medium">Available — prerequisites met</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-surface-container-highest border border-outline" />
+            <span className="text-on-surface-variant font-medium">Locked — prerequisites pending</span>
+          </span>
         </div>
       </div>
 
       {/* Loading State */}
       {loading && (
-        <div className="w-full min-h-[400px] rounded-2xl bg-surface-container-lowest border border-outline-variant/60 flex flex-col items-center justify-center gap-3 shadow-xl">
-          <Loader2 className="w-10 h-10 text-primary animate-spin" />
-          <p className="text-sm font-bold text-on-surface font-headline-md">Synthesizing Prerequisite DAG from ORBIT Backend...</p>
-          <p className="text-xs text-on-surface-variant">Running backend validation and Kahn's algorithm cycle detection</p>
+        <div className="w-full min-h-[320px] rounded-2xl bg-surface-container-lowest border border-outline-variant/60 flex flex-col items-center justify-center gap-3 shadow-xl" aria-busy="true">
+          <Loader2 className="w-9 h-9 text-primary animate-spin" />
+          <p className="text-sm font-bold text-on-surface font-headline-md">Building your skill map…</p>
+          <p className="text-xs text-on-surface-variant">Validating prerequisite order</p>
         </div>
       )}
 
-      {/* API Failure State */}
+      {/* Error State */}
       {!loading && error && (
         <div className="w-full p-8 rounded-2xl bg-rose-950/30 border border-rose-500/50 flex flex-col items-center justify-center text-center gap-3 shadow-xl">
           <AlertCircle className="w-10 h-10 text-rose-400" />
-          <h4 className="text-base font-bold text-rose-300">Backend Graph Request Failed</h4>
+          <h4 className="text-base font-bold text-rose-300">Couldn't load your skill map</h4>
           <p className="text-xs text-on-surface-variant max-w-md">{error}</p>
           <button
             onClick={fetchBackendGraph}
             className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-colors shadow"
           >
-            Retry Backend Request
+            Retry
           </button>
         </div>
       )}
 
       {/* Empty Graph State */}
       {!loading && !error && nodes.length === 0 && (
-        <div className="w-full min-h-[360px] rounded-2xl bg-surface-container-lowest border border-outline-variant/60 flex flex-col items-center justify-center text-center gap-2 shadow-xl">
+        <div className="w-full min-h-[280px] rounded-2xl bg-surface-container-lowest border border-outline-variant/60 flex flex-col items-center justify-center text-center gap-2 shadow-xl">
           <Layers className="w-10 h-10 text-outline" />
-          <h4 className="text-base font-bold text-on-surface">No Skills Found in Graph</h4>
-          <p className="text-xs text-on-surface-variant max-w-md">The backend did not return any skill nodes for this goal trajectory.</p>
+          <h4 className="text-base font-bold text-on-surface">Your skill map is empty</h4>
+          <p className="text-xs text-on-surface-variant max-w-md">This goal doesn't have any skills in its graph yet.</p>
         </div>
       )}
 
-      {/* Main 2-Pane Desktop Layout */}
+      {/* Main 2-Pane Layout: map + selected skill panel */}
       {!loading && !error && nodes.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left 2-Cols: Interactive SVG DAG Canvas */}
-          <div className="lg:col-span-2 rounded-2xl bg-surface-container-lowest border border-outline-variant/60 p-4 shadow-xl overflow-x-auto relative min-h-[480px]">
-            <div className="absolute top-3 left-4 text-[11px] text-outline font-mono">
-              Live Backend DAG Canvas — Click any node to inspect details
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+          {/* Skill map canvas — content-sized, horizontally scrollable when needed */}
+          <div className="lg:col-span-2 rounded-2xl bg-surface-container-lowest border border-outline-variant/60 p-4 shadow-xl">
+            <p className="text-[11px] text-outline mb-2 flex items-center gap-1.5">
+              <Info className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Your Skill Map — click any skill to inspect details. Prerequisites flow left to right.</span>
+            </p>
+            <div className="overflow-x-auto rounded-lg">
+              <svg
+                viewBox={`0 0 ${mapWidth} ${mapHeight}`}
+                style={{ width: '100%', minWidth: Math.min(mapWidth, 620), height: 'auto', display: 'block' }}
+                role="img"
+                aria-label={`Skill map for ${goalTitle}: ${nodes.length} skills. Use the buttons inside the map to inspect each skill.`}
+              >
+                <defs>
+                  <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#5a5f6e" />
+                  </marker>
+                  <marker id="arrowhead-active" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                    <polygon points="0 0, 8 3, 0 6" fill="#4edea3" />
+                  </marker>
+                </defs>
 
-            <svg className="w-full min-w-[720px] h-[440px]" viewBox="0 0 1180 360">
-              <defs>
-                <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-                  <polygon points="0 0, 8 3, 0 6" fill="#464555" />
-                </marker>
-                <marker id="arrowhead-active" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-                  <polygon points="0 0, 8 3, 0 6" fill="#4cd7f6" />
-                </marker>
-              </defs>
+                {/* Prerequisite connectors (never interactive) */}
+                {nodes.map((node) => {
+                  const targetCoords = nodeCoords[node.id];
+                  if (!targetCoords) return null;
 
-              {/* Draw Prerequisite Edge Lines */}
-              {nodes.map((node) => {
-                const targetCoords = nodeCoords[node.id];
-                if (!targetCoords) return null;
+                  return node.deps.map((prereqId) => {
+                    const sourceCoords = nodeCoords[prereqId];
+                    if (!sourceCoords) return null;
 
-                return node.deps.map((prereqId) => {
-                  const sourceCoords = nodeCoords[prereqId];
-                  if (!sourceCoords) return null;
+                    const isPrereqVerified = nodes.find(n => n.id === prereqId)?.state === 'VERIFIED';
 
-                  const isPrereqVerified = nodes.find(n => n.id === prereqId)?.status === 'Verified';
+                    return (
+                      <g key={`${prereqId}-${node.id}`}>
+                        <line
+                          x1={sourceCoords.x + NODE_W / 2 + 2}
+                          y1={sourceCoords.y}
+                          x2={targetCoords.x - NODE_W / 2 - 2}
+                          y2={targetCoords.y}
+                          stroke={isPrereqVerified ? '#4edea3' : '#5a5f6e'}
+                          strokeWidth={isPrereqVerified ? 2.5 : 1.5}
+                          strokeDasharray={isPrereqVerified ? 'none' : '4 4'}
+                          markerEnd={isPrereqVerified ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
+                        />
+                      </g>
+                    );
+                  });
+                })}
+
+                {/* Skill nodes — states map 1:1 to backend states */}
+                {nodes.map((node) => {
+                  const coords = nodeCoords[node.id];
+                  if (!coords) return null;
+
+                  const style = getStatusColor(node.status);
+                  const isSelected = selectedNode?.id === node.id;
+                  const labelText = node.label || node.id || 'Skill';
+                  const shortLabel = labelText.length > 19 ? labelText.substring(0, 17) + '…' : labelText;
 
                   return (
-                    <g key={`${prereqId}-${node.id}`}>
-                      <line
-                        x1={sourceCoords.x + 80}
-                        y1={sourceCoords.y}
-                        x2={targetCoords.x - 80}
-                        y2={targetCoords.y}
-                        stroke={isPrereqVerified ? '#4edea3' : '#464555'}
-                        strokeWidth={isPrereqVerified ? 2.5 : 1.5}
-                        strokeDasharray={isPrereqVerified ? 'none' : '4 4'}
-                        markerEnd={isPrereqVerified ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
-                      />
-                    </g>
-                  );
-                });
-              })}
-
-              {/* Draw Skill Nodes */}
-              {nodes.map((node) => {
-                const coords = nodeCoords[node.id];
-                if (!coords) return null;
-
-                const style = getStatusColor(node.status);
-                const isSelected = selectedNode?.id === node.id;
-                const labelText = node.label || node.id || 'Skill';
-
-                return (
-                  <g 
-                    key={node.id} 
-                    transform={`translate(${coords.x}, ${coords.y})`}
-                    onClick={() => setSelectedNodeId(node.id)}
-                    className="cursor-pointer group"
-                  >
-                    {/* Selection Ring */}
-                    {isSelected && (
+                    <g
+                      key={node.id}
+                      transform={`translate(${coords.x}, ${coords.y})`}
+                      onClick={() => selectNode(node.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          selectNode(node.id);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${node.label} — ${node.status}${node.mastery !== null ? `, diagnostic estimate ${node.mastery}%` : ', not assessed'}. Press Enter to inspect details.`}
+                      className="cursor-pointer group focus:outline-none"
+                    >
+                      <title>{labelText}</title>
+                      {/* Selection highlight */}
+                      {isSelected && (
+                        <rect
+                          x="-92"
+                          y="-36"
+                          width={NODE_W + 16}
+                          height={NODE_H + 16}
+                          rx="14"
+                          fill="none"
+                          stroke="#4f46e5"
+                          strokeWidth="2.5"
+                          className="animate-pulse"
+                        />
+                      )}
+                      {/* Keyboard focus indicator */}
                       <rect
-                        x="-88"
-                        y="-38"
-                        width="176"
-                        height="76"
+                        x="-92"
+                        y="-36"
+                        width={NODE_W + 16}
+                        height={NODE_H + 16}
                         rx="14"
                         fill="none"
-                        stroke="#4f46e5"
-                        strokeWidth="3"
-                        className="animate-pulse"
+                        stroke="transparent"
+                        strokeWidth="2.5"
+                        className="group-focus:stroke-secondary"
                       />
-                    )}
-
-                    {/* Node Rect */}
-                    <rect
-                      x="-82"
-                      y="-32"
-                      width="164"
-                      height="64"
-                      rx="12"
-                      fill={style.fill}
-                      stroke={style.stroke}
-                      strokeWidth={isSelected ? "2.5" : "1.5"}
-                      className="transition-all group-hover:stroke-primary"
-                    />
-
-                    {/* Icon & Label */}
-                    <text
-                      x="0"
-                      y="-8"
-                      textAnchor="middle"
-                      fill="#dfe2f1"
-                      fontSize="11"
-                      fontWeight="bold"
-                      fontFamily="Inter, sans-serif"
-                    >
-                      {labelText.length > 20 ? labelText.substring(0, 18) + '...' : labelText}
-                    </text>
-
-                    {/* Status pill inside node */}
-                    <rect
-                      x="-45"
-                      y="8"
-                      width="90"
-                      height="18"
-                      rx="9"
-                      fill={style.stroke}
-                      opacity="0.9"
-                    />
-                    <text
-                      x="0"
-                      y="21"
-                      textAnchor="middle"
-                      fill="#0f131d"
-                      fontSize="9"
-                      fontWeight="bold"
-                      fontFamily="Inter, sans-serif"
-                    >
-                      {(node.status || 'LOCKED').toUpperCase()}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+                      {/* Node body */}
+                      <rect
+                        x={-NODE_W / 2}
+                        y={-NODE_H / 2}
+                        width={NODE_W}
+                        height={NODE_H}
+                        rx="12"
+                        fill={style.fill}
+                        stroke={style.stroke}
+                        strokeWidth={isSelected ? 2.5 : 1.5}
+                        className="transition-all duration-150 group-hover:stroke-secondary"
+                      />
+                      {/* Label (full name available via tooltip + aria-label) */}
+                      <text
+                        x="0"
+                        y="-8"
+                        textAnchor="middle"
+                        fill="#dfe2f1"
+                        fontSize="12"
+                        fontWeight="600"
+                        fontFamily="Inter, sans-serif"
+                      >
+                        {shortLabel}
+                      </text>
+                      {/* Status pill */}
+                      <rect
+                        x="-48"
+                        y="8"
+                        width="96"
+                        height="18"
+                        rx="9"
+                        fill={style.stroke}
+                      />
+                      <text
+                        x="0"
+                        y="20.5"
+                        textAnchor="middle"
+                        fill={style.pillText}
+                        fontSize="9.5"
+                        fontWeight="700"
+                        fontFamily="Inter, sans-serif"
+                      >
+                        {(node.status || 'LOCKED').toUpperCase()}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
           </div>
 
-          {/* Right Col: Interactive Node Inspection Detail Panel */}
-          <div className="flex flex-col gap-4">
-            <div className="p-5 rounded-2xl bg-surface-container border border-outline-variant/60 shadow-xl flex flex-col gap-4">
+          {/* Selected skill panel */}
+          <div className="flex flex-col gap-4 min-w-0">
+            <div ref={detailRef} tabIndex={-1} role="region" aria-label="Selected skill details" className="p-5 rounded-2xl bg-surface-container border border-outline-variant/60 shadow-xl flex flex-col gap-4">
               <div className="flex items-center justify-between pb-3 border-b border-outline-variant/40">
-                <span className="text-xs font-bold text-outline uppercase tracking-wider">Node Details</span>
+                <span className="text-xs font-bold text-outline uppercase tracking-wider">Skill details</span>
                 <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${getStatusColor(selectedNode.status).bg} ${getStatusColor(selectedNode.status).text} border ${getStatusColor(selectedNode.status).border}`}>
                   {selectedNode.status}
                 </span>
@@ -487,77 +498,167 @@ export default function CompletionGraph({
 
               <div>
                 <h3 className="text-lg font-bold text-on-surface font-headline-md">{selectedNode.label}</h3>
-                <div className="flex items-center gap-2 text-xs text-on-surface-variant mt-1">
-                  <span>Category: {selectedNode.category}</span>
+                <p className="text-xs text-on-surface-variant mt-1.5 leading-relaxed">{describeSkill(selectedNode)}</p>
+                <div className="flex items-center gap-2 text-[11px] text-outline mt-1.5">
+                  <span>Target level: {selectedNode.level}</span>
                   <span>•</span>
-                  <span>Target: {selectedNode.level}</span>
+                  <span>Importance: {selectedNode.importance}</span>
                 </div>
               </div>
 
-              {/* Current Verified Mastery Gauge */}
-              <div className="p-3.5 rounded-xl bg-surface-container-high border border-outline-variant/40 flex flex-col gap-2">
-                <div className="flex justify-between text-xs font-semibold">
-                  <span className="text-on-surface-variant">Diagnostic score</span>
-                  <span className="font-mono text-tertiary font-bold">{selectedNode.mastery}%</span>
+              {/* Diagnostic estimate — honest about unassessed skills */}
+              {selectedNode.mastery !== null ? (
+                <div className="p-3.5 rounded-xl bg-surface-container-high border border-outline-variant/40 flex flex-col gap-2">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-on-surface-variant">Diagnostic estimate</span>
+                    <span className="font-mono text-tertiary font-bold">{selectedNode.mastery}%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-surface-container-lowest overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-secondary to-tertiary transition-all duration-500 rounded-full"
+                      style={{ width: `${selectedNode.mastery}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-outline">Placement estimate only — never counts as verification.</span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-surface-container-lowest overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-secondary to-tertiary transition-all duration-500 rounded-full"
-                    style={{ width: `${selectedNode.mastery}%` }}
-                  />
+              ) : (
+                <div className="p-3.5 rounded-xl bg-surface-container-high border border-outline-variant/40 flex flex-col gap-1">
+                  <div className="flex justify-between text-xs font-semibold">
+                    <span className="text-on-surface-variant">Diagnostic estimate</span>
+                    <span className="text-[10px] font-bold text-outline tracking-wider border border-outline-variant/40 px-2 py-0.5 rounded">UNASSESSED</span>
+                  </div>
+                  <span className="text-[10px] text-outline">No diagnostic score for this skill yet — no score is guessed.</span>
                 </div>
-              </div>
+              )}
 
-              {/* Prerequisite Dependencies */}
+              {/* Prerequisites — labels are visibly interactive */}
               <div className="flex flex-col gap-2">
-                <span className="text-xs font-bold text-outline uppercase tracking-wider">Prerequisite Requirements:</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-outline uppercase tracking-wider">Prerequisites</span>
+                  {selectedNode.deps?.length > 0 && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      selectedNode.deps.every(depId => nodes.find(n => n.id === depId)?.state === 'VERIFIED')
+                        ? 'text-tertiary border-tertiary/40 bg-tertiary-container/20'
+                        : 'text-amber-400 border-amber-500/40 bg-amber-950/30'
+                    }`}>
+                      {selectedNode.deps.filter(depId => nodes.find(n => n.id === depId)?.state === 'VERIFIED').length} of {selectedNode.deps.length} verified
+                    </span>
+                  )}
+                </div>
                 {!selectedNode.deps || selectedNode.deps.length === 0 ? (
-                  <span className="text-xs text-tertiary font-medium">Zero prerequisites (Root Foundational Skill)</span>
+                  <span className="text-xs text-tertiary font-medium">No prerequisites — foundational skill.</span>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {selectedNode.deps.map((depId) => {
                       const depNode = nodes.find(n => n.id === depId);
-                      const isVerified = depNode?.status === 'Verified';
+                      const isVerified = depNode?.state === 'VERIFIED';
 
                       return (
-                        <div key={depId} className="p-2.5 rounded-lg bg-surface-container-high border border-outline-variant/40 flex items-center justify-between text-xs">
-                          <span className="text-on-surface font-medium">{depNode?.label || depId}</span>
+                        <button
+                          type="button"
+                          key={depId}
+                          onClick={() => selectNode(depId)}
+                          aria-label={`Inspect prerequisite ${depNode?.label || depId}`}
+                          className="text-left group/prereq hover:border-secondary/60 hover:bg-surface-container-highest p-2.5 rounded-lg bg-surface-container-high border border-outline-variant/40 flex items-center justify-between text-xs transition-colors"
+                        >
+                          <span className="text-on-surface font-medium flex items-center gap-1.5 min-w-0">
+                            {isVerified
+                              ? <Check className="w-3.5 h-3.5 text-tertiary flex-shrink-0" />
+                              : <Lock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
+                            <span className="truncate">{depNode?.label || depId}</span>
+                          </span>
                           {isVerified ? (
-                            <span className="text-tertiary font-bold flex items-center gap-1">
-                              <Check className="w-3.5 h-3.5" /> Verified
+                            <span className="text-tertiary font-bold flex items-center gap-1 flex-shrink-0">
+                              Verified
                             </span>
                           ) : (
-                            <span className="text-amber-400 font-medium flex items-center gap-1">
-                              <Lock className="w-3.5 h-3.5" /> Unverified (Blocks Unlock)
+                            <span className="text-amber-400 font-medium flex items-center gap-1 flex-shrink-0">
+                              <span className="hidden sm:inline">Blocks unlock</span>
+                              <ChevronRight className="w-3.5 h-3.5 opacity-70 group-hover/prereq:translate-x-0.5 transition-transform" />
                             </span>
                           )}
-                        </div>
+                        </button>
                       );
                     })}
+                    <span className="text-[10px] text-outline">Select a prerequisite to inspect it on the map.</span>
                   </div>
                 )}
               </div>
 
-              {/* Unlock Rule Warning */}
+              {/* Unlock rule */}
               <div className="p-3 rounded-xl bg-surface-container-lowest border border-outline-variant/40 text-xs flex flex-col gap-1">
                 <div className="flex items-center gap-1.5 font-bold text-secondary">
-                  <Info className="w-4 h-4" /> Prerequisite Unlock Rule:
+                  <Info className="w-4 h-4" /> How unlocking works
                 </div>
                 <p className="text-[11px] text-on-surface-variant">
-                  Only a <strong>Verified</strong> completion unlocks downstream prerequisite nodes in ORBIT.
+                  Only a <strong>Verified</strong> skill check unlocks downstream skills — estimates never do.
                 </p>
               </div>
 
-              {/* Action CTAs */}
-              <div className="flex flex-col gap-2 pt-2">
+              {/* Learning resources (real, from the verified catalogue) */}
+              <div className="flex flex-col gap-2">
+                <span className="text-xs font-bold text-outline uppercase tracking-wider">Learning resources</span>
+                {resourcesFor(selectedNode).length > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    {resourcesFor(selectedNode).map((res) => (
+                      <div key={`${selectedNode.db_id}-${res.id ?? res.format}`} className="p-2.5 rounded-lg bg-surface-container-high border border-outline-variant/40 flex items-center justify-between gap-2 text-xs">
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-on-surface font-medium truncate">{res.title}</span>
+                          <span className="text-[10px] text-outline">{res.source} · {res.duration_hours} hrs · {res.format}</span>
+                        </div>
+                        {res.url && (
+                          <a
+                            href={res.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-secondary hover:text-on-surface font-semibold flex-shrink-0"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" /> Open
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs text-on-surface-variant">No verified resource catalogued for this skill yet.</span>
+                )}
+              </div>
+
+              {/* Actions — status-aware; locked skills explain themselves and cannot bypass */}
+              <div className="flex flex-col gap-2 pt-1">
+                {selectedNode.state === 'LOCKED' && (
+                  <p className="text-[11px] text-amber-400 flex items-start gap-1.5">
+                    <Lock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <span>
+                      This skill cannot be verified yet —{' '}
+                      {selectedNode.deps.filter(depId => nodes.find(n => n.id === depId)?.state !== 'VERIFIED').map(depId => nodes.find(n => n.id === depId)?.label || depId).join(', ')}{' '}
+                      must be verified first.
+                    </span>
+                  </p>
+                )}
                 <button
-                  disabled={selectedNode.status === 'Locked' || selectedNode.status === 'Verified'}
+                  disabled={selectedNode.state === 'LOCKED' || selectedNode.state === 'VERIFIED'}
                   onClick={() => onSelectNodeForProof(selectedNode)}
-                  className="w-full py-3 px-4 rounded-xl bg-primary-container text-white font-bold text-xs flex items-center justify-center gap-2 shadow hover:bg-indigo-600 transition-colors"
+                  className="w-full py-3 px-4 rounded-xl bg-primary-container text-white font-bold text-xs flex items-center justify-center gap-2 shadow hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Award className="w-4 h-4" />
-                  <span>Verify Mastery via Proof / Quiz</span>
+                  <span>
+                    {selectedNode.state === 'VERIFIED'
+                      ? 'Verified — mastery demonstrated'
+                      : selectedNode.state === 'LOCKED'
+                      ? 'Locked — verify prerequisites first'
+                      : 'Verify Mastery via Skill Check'}
+                  </span>
                 </button>
+                {onNavigateToRoute && selectedNode.state !== 'VERIFIED' && (
+                  <button
+                    onClick={onNavigateToRoute}
+                    className="w-full py-2.5 px-4 rounded-xl border border-outline-variant/60 bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4 text-secondary" />
+                    <span>View Learning Resources in Route</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

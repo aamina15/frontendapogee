@@ -10,3 +10,4 @@ class Resource(Base):
     url = Column(String, nullable=True)
     source = Column(String, nullable=True)       # e.g. "Coursera", "YouTube", "Book"
     duration_hours = Column(Float, nullable=True)
+    format = Column(String, nullable=True)       # "video" | "reading" | "both"

@@ -287,7 +287,7 @@ export default function CalendarRePlanModal({
                             }
                             <span className="truncate max-w-[240px]">{res.title}</span>
                           </span>
-                          <span className="font-mono text-outline shrink-0">{res.duration_hours}h</span>
+                          <span className="font-mono text-outline shrink-0">{res.remaining_hours ?? res.duration_hours}h remaining</span>
                         </div>
                       ))}
                     </div>

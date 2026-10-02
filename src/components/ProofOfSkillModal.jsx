@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Award,
+  BookOpen,
   X,
   CheckCircle2,
   XCircle,
@@ -181,7 +182,7 @@ export default function ProofOfSkillModal({
           {phase === 'quiz' && (
             <div className="flex flex-col gap-4">
               <span className="text-xs font-bold text-outline uppercase tracking-wider">
-                {questions.length} Questions — Select one answer per question
+                {questions.length} questions — select one answer per question. Graded on the server; score ≥ {threshold}% verifies this skill.
               </span>
 
               {questions.map((q, qi) => (
@@ -261,7 +262,7 @@ export default function ProofOfSkillModal({
                     </h4>
                     <p className="text-xs text-on-surface-variant">
                       {receipt.passed
-                        ? 'Passed rubric — Verified badge issued.'
+                        ? `Verified: ${skillName} — coverage updated.`
                         : `Score ${receipt.score}% — need ${receipt.threshold}% to pass. Try again!`}
                     </p>
                   </div>
@@ -328,17 +329,26 @@ export default function ProofOfSkillModal({
                   onClick={handleApply}
                   className="w-full py-3.5 px-4 rounded-xl bg-primary text-on-primary font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary/90 transition-all cursor-pointer shadow-lg shadow-indigo-900/30"
                 >
-                  <span>View Updated Graph</span>
+                  <span>Continue Learning</span>
                   <ChevronRight className="w-5 h-5" />
                 </button>
               ) : (
-                <button
-                  onClick={handleRetry}
-                  className="w-full py-3.5 px-4 rounded-xl bg-surface-container-high border border-outline-variant/60 text-on-surface font-bold text-sm flex items-center justify-center gap-2 hover:bg-surface-container-highest transition-all cursor-pointer"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Retry Quiz</span>
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={handleRetry}
+                    className="flex-1 py-3.5 px-4 rounded-xl bg-tertiary text-on-tertiary font-bold text-sm flex items-center justify-center gap-2 hover:bg-tertiary/90 transition-all cursor-pointer shadow-lg"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Retry Quiz</span>
+                  </button>
+                  <button
+                    onClick={handleApply}
+                    className="flex-1 py-3.5 px-4 rounded-xl bg-surface-container-high border border-outline-variant/60 text-on-surface font-bold text-sm flex items-center justify-center gap-2 hover:bg-surface-container-highest transition-all cursor-pointer"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    <span>Back to Learning</span>
+                  </button>
+                </div>
               )}
             </div>
           )}

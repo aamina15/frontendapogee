@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Compass, Clock3, CalendarDays, Wallet, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowRight, Compass, Clock3, CalendarDays, Wallet, Sparkles, Loader2, PlayCircle } from 'lucide-react';
 import { MISSION_PROFILES } from '../data/mockData';
 
 const budgetOptions = [
@@ -10,7 +10,7 @@ const budgetOptions = [
   { value: 'any', label: 'No Preference', description: 'No budget preference. Free resources are still included.' },
 ];
 
-export default function IntakeScreen({ currentProfile, onSelectProfile, onStartDiagnostic, busy, error }) {
+export default function IntakeScreen({ currentProfile, onSelectProfile, onStartDiagnostic, busy, error, savedGoal, onResume, restoring }) {
   const [title, setTitle] = useState(currentProfile?.title || 'Frontend Developer Internship');
   const [hours, setHours] = useState(currentProfile?.commitment || 7);
   const [weeks, setWeeks] = useState(currentProfile?.duration_weeks || 8);
@@ -35,6 +35,19 @@ export default function IntakeScreen({ currentProfile, onSelectProfile, onStartD
         <h1 className="text-3xl sm:text-4xl font-headline-lg font-bold tracking-tight mb-4">A clear goal.<br /><span className="text-gradient">A path built around you.</span></h1>
         <p className="text-on-surface-variant leading-relaxed">Tell us where you want to go and the time you have. Your skill map, starting assessment, and learning route begin here.</p>
       </div>
+      {savedGoal && (
+        <div className="mb-6 rounded-2xl border border-secondary/30 bg-gradient-to-br from-secondary/10 to-primary/5 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4" role="status">
+          <div className="min-w-0">
+            <p className="eyebrow mb-1.5">SAVED PROGRESS</p>
+            <p className="text-sm text-on-surface font-semibold truncate">“{savedGoal.title}” — {savedGoal.hours_per_week}h/week over {savedGoal.duration_weeks} weeks</p>
+            <p className="text-xs text-on-surface-variant mt-1">Your goal, skill map, and verified progress are saved. Nothing is lost by starting a new goal below.</p>
+          </div>
+          <button type="button" onClick={onResume} disabled={restoring || busy} className="btn-secondary text-sm shrink-0">
+            <PlayCircle className="w-4 h-4" />
+            <span>Resume Learning</span>
+          </button>
+        </div>
+      )}
       <form onSubmit={submit} className="intake-card rounded-3xl border border-white/10 p-5 sm:p-8 shadow-2xl shadow-black/20 flex flex-col gap-7">
         <div>
           <label htmlFor="learning-goal" className="label-text">What would you like to achieve?</label>

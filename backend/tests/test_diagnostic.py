@@ -94,3 +94,97 @@ def test_submit_diagnostic_grading_and_persistence(setup_db_with_goal):
     assert get_data["goal_id"] == goal_id
     assert len(get_data["mastery"]) == len(submit_data["mastery"])
     assert get_data["mastery"][0]["score"] == first_mastery["score"]
+    assert all(m["assessed"] is True for m in get_data["mastery"])
+
+
+# ===== GOAL-AWARE DIAGNOSTIC DISTRIBUTION (learner-journey overhaul) =====
+
+def _graph_skills(goal_id):
+    return client.get(f"/api/goals/{goal_id}/graph").json()["skills"]
+
+
+def test_quick_diagnostic_covers_every_skill(setup_db_with_goal):
+    """Quick assessment: one question per skill — the count reflects the graph,
+    and no skill is silently left unassessed on small graphs."""
+    goal_id = setup_db_with_goal
+    skills = _graph_skills(goal_id)
+    assert len(skills) == 6  # deterministic fallback frontend graph
+
+    data = client.post(f"/api/goals/{goal_id}/diagnostic").json()
+    questions = data["questions"]
+
+    assert len(questions) == len(skills), \
+        f"Quick diagnostic should ask 1 question per skill ({len(skills)}), got {len(questions)}"
+    covered = {q["skill_db_id"] for q in questions}
+    assert covered == {s["db_id"] for s in skills}, "Every skill must be assessed"
+
+
+def test_quick_diagnostic_is_idempotent(setup_db_with_goal):
+    """Calling the diagnostic endpoint twice must not grow the question set."""
+    goal_id = setup_db_with_goal
+    first = client.post(f"/api/goals/{goal_id}/diagnostic").json()["questions"]
+    second = client.post(f"/api/goals/{goal_id}/diagnostic").json()["questions"]
+    assert [q["id"] for q in first] == [q["id"] for q in second]
+
+
+def test_deep_diagnostic_tops_up_to_two_per_skill(setup_db_with_goal):
+    """Deep assessment: preserves existing questions, tops up to 2 per skill (capped)."""
+    goal_id = setup_db_with_goal
+    skills = _graph_skills(goal_id)
+    quick = client.post(f"/api/goals/{goal_id}/diagnostic").json()["questions"]
+    assert len(quick) == len(skills)
+
+    deep = client.post(f"/api/goals/{goal_id}/diagnostic?depth=deep").json()["questions"]
+    assert len(deep) == 2 * len(skills), "Deep should ask 2 questions per skill on a 6-skill graph"
+    assert {q["id"] for q in quick} <= {q["id"] for q in deep}, "Deep must preserve existing questions"
+
+    per_skill = {}
+    for q in deep:
+        per_skill[q["skill_db_id"]] = per_skill.get(q["skill_db_id"], 0) + 1
+    assert all(v == 2 for v in per_skill.values())
+    assert set(per_skill) == {s["db_id"] for s in skills}
+
+
+def test_deep_diagnostic_caps_at_twelve(setup_db_with_goal):
+    """Deep assessment on a large graph respects the 12-question cap."""
+    from models.skill import Skill
+    from db.database import SessionLocal
+
+    goal_id = setup_db_with_goal
+    db = SessionLocal()
+    for i in range(4, 12):  # grow the 6-skill graph to 14 skills
+        db.add(Skill(goal_id=goal_id, name=f"Extra Topic {i}", slug=f"extra_topic_{i}"))
+    db.commit()
+    db.close()
+
+    deep = client.post(f"/api/goals/{goal_id}/diagnostic?depth=deep").json()["questions"]
+    assert len(deep) <= 12, "Deep diagnostic must cap at 12 questions"
+    assert all(not q["skill_name"].startswith("Extra Topic") for q in deep), "Unsupported topics must not receive fabricated questions"
+
+
+def test_unassessed_skills_get_no_fabricated_scores(setup_db_with_goal):
+    """Skills beyond the question cap stay UNASSESSED: no mastery row, no score."""
+    from models.skill import Skill
+    from db.database import SessionLocal
+
+    goal_id = setup_db_with_goal
+    db = SessionLocal()
+    for i in range(4, 12):  # 14 skills total: quick cap 10 -> 4 unassessed
+        db.add(Skill(goal_id=goal_id, name=f"Extra Topic {i}", slug=f"extra_topic_{i}"))
+    db.commit()
+    db.close()
+
+    questions = client.post(f"/api/goals/{goal_id}/diagnostic").json()["questions"]
+    assert len(questions) == 6  # Only six topics have a reliable curated assessment.
+
+    answers = [{"question_id": q["id"], "selected_option": q.get("selected_option", 0)} for q in questions]
+    submit = client.post(f"/api/goals/{goal_id}/diagnostic/submit", json={"answers": answers})
+    assert submit.status_code == 200
+
+    mastery = client.get(f"/api/goals/{goal_id}/diagnostic/mastery").json()["mastery"]
+    assessed_ids = {m["skill_db_id"] for m in mastery}
+    assert assessed_ids == {q["skill_db_id"] for q in questions}, \
+        "Only assessed skills may have mastery rows"
+
+    # Every assessed row carries a real score; unassessed skills are simply absent
+    # (the UI labels them UNASSESSED rather than showing a fabricated 0%).

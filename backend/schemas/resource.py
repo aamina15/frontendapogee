@@ -11,11 +11,13 @@ class ResourceCreate(BaseModel):
 
 
 class ResourceRead(BaseModel):
-    id: int
+    # id is None for read-only catalogue fallback entries (not persisted rows)
+    id: Optional[int] = None
     skill_id: int
     title: str
     url: Optional[str]
     source: Optional[str]
     duration_hours: Optional[float]
+    format: Optional[str] = None
 
     model_config = {"from_attributes": True}

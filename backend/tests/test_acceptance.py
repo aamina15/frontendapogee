@@ -170,12 +170,16 @@ def test_replan_failure_rolls_back_goal_and_route(goal, monkeypatch):
 
 def test_concurrent_diagnostic_requests_are_idempotent(goal):
     from concurrent.futures import ThreadPoolExecutor
-    graph(goal)
+    g = graph(goal)
+    skill_count = len(g['skills'])
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: client.post(f'/api/goals/{goal}/diagnostic'), range(2)))
     assert all(r.status_code == 200 for r in results)
     assert results[0].json() == results[1].json()
-    assert len(results[0].json()['questions']) == 10
+    questions = results[0].json()['questions']
+    # Goal-aware quick assessment: one question per skill (capped) with full coverage
+    assert len(questions) == min(skill_count, 10)
+    assert {q['skill_db_id'] for q in questions} == {s['db_id'] for s in g['skills']}
 
 
 def test_concurrent_verification_and_route_requests_are_idempotent(goal):

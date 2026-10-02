@@ -198,9 +198,11 @@ export function generateGraphForGoal(goalId) {
  * Fetch / generate diagnostic questions for a goal.
  * Server masks correct_index and explanation.
  * @param {number} goalId
+ * @param {string} [depth] - 'quick' (1 per skill, default) or 'deep' (tops up to 2 per skill)
  */
-export function fetchDiagnostic(goalId) {
-  return apiFetch(`/api/goals/${goalId}/diagnostic`, {
+export function fetchDiagnostic(goalId, depth) {
+  const query = depth === 'deep' ? '?depth=deep' : '';
+  return apiFetch(`/api/goals/${goalId}/diagnostic${query}`, {
     method: 'POST',
   });
 }

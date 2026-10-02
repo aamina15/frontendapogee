@@ -19,8 +19,8 @@ from models.goal import Goal
 from models.skill import Skill, SkillDependency
 from models.mastery import Mastery
 from models.diagnostic import DiagnosticQuestion
-from services.diagnostic_service import get_verification_questions_for_skill
 from services.state_engine import calculate_skill_states
+from services.question_service import public_explanation, question_source
 
 router = APIRouter(prefix="/api/goals", tags=["Skill Verification"])
 
@@ -34,6 +34,7 @@ class QuestionOut(BaseModel):
     id: int
     question: str
     options: List[str]
+    source: str = 'legacy_bank'
 
 
 class VerificationQuestionsResponse(BaseModel):
@@ -92,7 +93,13 @@ def _get_or_create_verification_questions(
         return existing
 
     # Generate from catalogue
-    templates = get_verification_questions_for_skill(skill.name, skill.slug or "")
+    from services.question_service import questions_for_skills
+    goal = db.get(Goal, goal_id)
+    prior = db.query(DiagnosticQuestion).filter(DiagnosticQuestion.goal_id == goal_id,
+        DiagnosticQuestion.skill_db_id == skill.id).all()
+    templates = questions_for_skills(goal, [skill], {skill.id: 5}, [q.question for q in prior], 'verification')[skill.id]
+    if len(templates) < 3:
+        raise HTTPException(503, "A reliable skill-specific verification is not available yet. Your progress is unchanged.")
     rows = []
     for t in templates:
         row = DiagnosticQuestion(
@@ -181,7 +188,7 @@ def get_verification_questions(
         "skill_id": skill_id,
         "skill_name": skill.name,
         "questions": [
-            {"id": q.id, "question": q.question, "options": q.options}
+            {"id": q.id, "question": q.question, "options": q.options, "source": question_source(q.explanation)}
             for q in questions
         ],
         "threshold": VERIFICATION_PASS_THRESHOLD,
@@ -215,6 +222,13 @@ def verify_skill(
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found in this goal")
 
+    # Prerequisite gate runs FIRST: a locked dependent is rejected before any
+    # question generation, grading, or answer validation can occur.
+    states_now = _recalculate_states(db, goal_id)
+    state = next(s for s in states_now if s["db_id"] == skill_id)
+    if state["status"] == "LOCKED":
+        raise HTTPException(409, "Verify all prerequisite skills first.")
+
     # Fetch the verification questions (must have been generated first)
     verif_slug = f"verif_{skill_id}"
     questions = (
@@ -234,9 +248,6 @@ def verify_skill(
 
     if len(answer_map) != len(payload.answers) or set(answer_map) != set(q_map):
         raise HTTPException(422, "Answer every verification question exactly once.")
-    state = next(s for s in _recalculate_states(db, goal_id) if s["db_id"] == skill_id)
-    if state["status"] == "LOCKED":
-        raise HTTPException(409, "Verify all prerequisite skills first.")
 
     # 1. Grade
     correct = 0
@@ -253,14 +264,15 @@ def verify_skill(
             "selected_option": selected,
             "correct_index": q.correct_index,
             "is_correct": is_correct,
-            "explanation": q.explanation or "",
+            "explanation": public_explanation(q.explanation) or "",
         })
 
     score_pct = int(round((correct / total) * 100)) if total > 0 else 0
     passed = score_pct >= VERIFICATION_PASS_THRESHOLD
 
-    # 2. Snapshot states BEFORE update (to detect newly unlocked)
-    states_before = {s["db_id"]: s["status"] for s in _recalculate_states(db, goal_id)}
+    # 2. Snapshot states BEFORE update (states_now was computed pre-grading;
+    #    nothing has been persisted since, so it is still the "before" state)
+    states_before = {s["db_id"]: s["status"] for s in states_now}
 
     # 3. Persist mastery
     mastery = (

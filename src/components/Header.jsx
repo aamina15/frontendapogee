@@ -29,7 +29,7 @@ export default function Header({ activeStep, setActiveStep, onOpenCalendarRePlan
           })}
         </nav>
         <div className="flex items-center gap-2">
-          <div className="text-right"><span role="status" className={`text-[10px] tracking-wider font-semibold ${apiStatus === 'online' ? 'text-tertiary' : 'text-amber-300'}`}>● {apiStatus === 'online' ? 'CONNECTED' : apiStatus === 'offline' ? 'OFFLINE' : 'CONNECTING'}</span><span className="block text-[10px] text-outline">{readinessBand ? `Readiness ${readinessBand.min}%–${readinessBand.max}%` : 'Readiness pending'}</span></div>
+          <div className="text-right"><span role="status" className={`text-[10px] tracking-wider font-semibold ${apiStatus === 'online' ? 'text-tertiary' : 'text-amber-300'}`}>● {apiStatus === 'online' ? 'CONNECTED' : apiStatus === 'offline' ? 'OFFLINE' : 'CONNECTING'}</span><span className="block text-[10px] text-outline">{readinessBand ? `Diagnostic estimate ${readinessBand.min === readinessBand.max ? `${readinessBand.min}%` : `${readinessBand.min}%–${readinessBand.max}%`}` : 'Diagnostic pending'}</span></div>
           {routeReady && <button disabled={busy} onClick={onOpenCalendarRePlan} className="btn-secondary text-xs !px-2 !py-2" title="Adjust your weekly availability"><Calendar className="w-4 h-4" />Smart Re-plan</button>}
         </div>
       </div>

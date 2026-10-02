@@ -191,7 +191,7 @@ function ProductPreview() {
   );
 }
 
-export default function LandingPage({ onStartLearning, starting }) {
+export default function LandingPage({ onStartLearning, onStartNew, canResume, starting }) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -278,7 +278,7 @@ export default function LandingPage({ onStartLearning, starting }) {
               </button>
               <button onClick={onStartLearning} disabled={starting} className="btn-primary px-5 py-2.5">
                 <Sparkles className="w-4 h-4" />
-                <span>Start Learning</span>
+                <span>{canResume ? 'Resume Learning' : 'Start Learning'}</span>
               </button>
             </div>
           </div>
@@ -303,21 +303,31 @@ export default function LandingPage({ onStartLearning, starting }) {
                 recommends real learning resources, verifies your skills, and adapts as you progress.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
-                <button 
+                <button
                   onClick={onStartLearning} disabled={starting}
                   className="btn-primary px-10 py-4 text-base group"
                 >
                   <Sparkles className="w-5 h-5" />
-                  <span>Start Learning</span>
+                  <span>{starting ? 'Checking for saved progress…' : canResume ? 'Resume Learning' : 'Start Learning'}</span>
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform ml-2" />
                 </button>
-                <button 
-                  onClick={() => scrollToSection('features')}
-                  className="btn-secondary px-10 py-4 text-base group"
-                >
-                  Explore Features
-                  <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform ml-2" />
-                </button>
+                {canResume ? (
+                  <button
+                    onClick={onStartNew} disabled={starting}
+                    className="btn-secondary px-10 py-4 text-base group"
+                  >
+                    Start a New Goal
+                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform ml-2" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => scrollToSection('features')}
+                    className="btn-secondary px-10 py-4 text-base group"
+                  >
+                    Explore Features
+                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform ml-2" />
+                  </button>
+                )}
               </div>
               <div className="mt-10 flex flex-wrap items-center justify-center lg:justify-start gap-x-6 gap-y-3 text-xs text-on-surface-variant">
                 <div className="flex items-center gap-2">
@@ -418,14 +428,24 @@ export default function LandingPage({ onStartLearning, starting }) {
             Build your skills with a clear route and evidence of what you have learned. 
             Your first goal takes 2 minutes to set up.
           </p>
-          <button 
-            onClick={onStartLearning} disabled={starting}
-            className="btn-primary px-10 py-4 text-lg group"
-          >
-            <Sparkles className="w-6 h-6" />
-            <span>Start Your Learning Journey</span>
-            <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform ml-2" />
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <button
+              onClick={onStartLearning} disabled={starting}
+              className="btn-primary px-10 py-4 text-lg group"
+            >
+              <Sparkles className="w-6 h-6" />
+              <span>{canResume ? 'Resume Your Learning Journey' : 'Start Your Learning Journey'}</span>
+              <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform ml-2" />
+            </button>
+            {canResume && (
+              <button
+                onClick={onStartNew} disabled={starting}
+                className="btn-secondary px-10 py-4 text-lg"
+              >
+                Start a New Goal
+              </button>
+            )}
+          </div>
           <p className="mt-6 text-body-sm text-on-surface-variant">
             No credit card • No login required • Runs locally
           </p>

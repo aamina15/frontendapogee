@@ -10,6 +10,7 @@ from models.mastery import Mastery
 from services.ai_service import generate_skill_dag_with_gemini
 from services.dag_validator import validate_and_clean_dag
 from services.state_engine import calculate_skill_states
+from services.coverage_service import calculate_coverage
 
 router = APIRouter(prefix="/api/goals", tags=["AI Skill Graph Generator & State Engine"])
 
@@ -21,6 +22,7 @@ class GraphGenerationResponse(BaseModel):
     validation: Dict[str, Any]
     source: str = "unknown"
     warning: Optional[str] = None
+    coverage: Optional[Dict[str, Any]] = None
 
 
 @router.post("/{goal_id}/generate-graph", response_model=GraphGenerationResponse)
@@ -125,4 +127,5 @@ def get_graph(goal_id: int, db: Session = Depends(get_db)):
     return {"goal_id": goal_id, "skills": _recalculate_states(db, goal_id),
             "dependencies": deps,
             "validation": json.loads(goal.graph_validation or '{"acyclic": true}'),
-            "source": goal.graph_source or "unknown", "warning": goal.graph_warning}
+            "source": goal.graph_source or "unknown", "warning": goal.graph_warning,
+            "coverage": calculate_coverage(db, goal_id)}
