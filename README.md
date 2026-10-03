@@ -172,14 +172,13 @@ ORBIT is a hackathon MVP, not a claim that every learning goal already has compl
 - Improve feedback-driven route adjustment and longer-term learner analytics.
 - Extend multi-user accounts and personalized progress history.
 - Evaluate outcomes with learners, including time-to-first-action, route completion, and verified skill progress.
+
 👥 Team Revengers
 Built for Codeblitz 2.0 (2026) by:
 Member	Team role
 Aditya Agarwal	Team Leader
 Aditya Tiwari	Team Member
 Aamina Hasan	Team Member
-Anjali Yadav	Team Member
-
 
 <div align="center">
 
