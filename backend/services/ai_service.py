@@ -93,16 +93,12 @@ def generate_skill_dag_with_gemini(
     duration_weeks: int = 12,
     budget: float = 0.0
 ) -> Dict[str, Any]:
-    """
-    Calls Gemini API to generate structured skill DAG for a learner's goal.
-    Uses strict JSON schema and falls back gracefully if Gemini API key is missing or encounters errors.
-    """
-    api_key = getattr(settings, "GEMINI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
+    """Generate a DAG through the configured provider chain.
 
-    if not api_key:
-        logger.info("GEMINI_API_KEY not configured. Using deterministic fallback graph generator.")
-        return get_fallback_dag_for_goal(goal_title)
-
+    The historical function name is retained because routes and tests import it.
+    OpenAI is the default primary provider; Gemini remains an optional secondary
+    provider, followed by the deterministic fallback.
+    """
     prompt = f"""
 You are APOGEE's Skill Graph AI Architect.
 Generate a concise, structured prerequisite Skill Graph (DAG) for a learner's goal:
@@ -137,43 +133,84 @@ Respond ONLY with JSON matching this exact structure:
 }}
 """
 
-    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "responseMimeType": "application/json",
-        }
+    provider_results = {
+        "openai": lambda: _generate_with_openai(prompt),
+        "gemini": lambda: _generate_with_gemini(prompt),
     }
 
-    try:
-        with httpx.Client(timeout=60.0) as client:
-            resp = client.post(url, json=payload, headers={"x-goog-api-key": api_key})
-            if resp.status_code != 200:
-                logger.warning("Gemini API returned HTTP %s", resp.status_code)
-                return get_fallback_dag_for_goal(goal_title)
+    for provider in _provider_order():
+        if not _provider_key(provider):
+            logger.info("AI provider %s is not configured; skipping it", provider)
+            continue
+        try:
+            result = provider_results[provider]()
+            return {**result, "source": provider, "warning": None}
+        except Exception as exc:
+            logger.warning("%s DAG generation failed (%s); trying next provider", provider.capitalize(), type(exc).__name__)
 
-            res_data = resp.json()
-            candidates = res_data.get("candidates", [])
-            if not candidates:
-                return get_fallback_dag_for_goal(goal_title)
+    logger.warning("No configured AI provider produced a valid DAG; using deterministic fallback")
+    return get_fallback_dag_for_goal(goal_title)
 
-            text_content = candidates[0]["content"]["parts"][0]["text"]
-            parsed_json = json.loads(text_content)
 
-            # Validate against Pydantic model
-            parsed_response = GeminiDAGResponse.model_validate(parsed_json)
-            
-            # Convert back to standard dicts with "from" and "to" keys
-            return {
-                "source": "gemini",
-                "warning": None,
-                "skills": [s.model_dump() for s in parsed_response.skills],
-                "dependencies": [
-                    {"from": d.from_id, "to": d.to_id} for d in parsed_response.dependencies
-                ]
-            }
+def _provider_order() -> List[str]:
+    preferred = str(getattr(settings, "AI_PROVIDER", "openai") or "openai").strip().lower()
+    if preferred == "gemini":
+        return ["gemini", "openai"]
+    if preferred in {"fallback", "none", "off"}:
+        return []
+    return ["openai", "gemini"]
 
-    except Exception as e:
-        logger.error("Gemini DAG generation failed (%s)", type(e).__name__)
-        return get_fallback_dag_for_goal(goal_title)
+
+def _provider_key(provider: str) -> str:
+    field = "OPENAI_API_KEY" if provider == "openai" else "GEMINI_API_KEY"
+    return getattr(settings, field, "") or os.getenv(field, "")
+
+
+def _parse_dag(parsed_json: Any) -> Dict[str, Any]:
+    parsed_response = GeminiDAGResponse.model_validate(parsed_json)
+    return {
+        "skills": [skill.model_dump() for skill in parsed_response.skills],
+        "dependencies": [{"from": dep.from_id, "to": dep.to_id} for dep in parsed_response.dependencies],
+    }
+
+
+def _generate_with_openai(prompt: str) -> Dict[str, Any]:
+    api_key = _provider_key("openai")
+    model = getattr(settings, "OPENAI_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "Return only valid JSON matching the requested schema."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+    }
+    with httpx.Client(timeout=60.0) as client:
+        response = client.post(
+            "https://api.openai.com/v1/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+    if response.status_code != 200:
+        logger.warning("OpenAI API returned HTTP %s", response.status_code)
+        raise RuntimeError("OpenAI request failed")
+    content = response.json()["choices"][0]["message"]["content"]
+    return _parse_dag(json.loads(content))
+
+
+def _generate_with_gemini(prompt: str) -> Dict[str, Any]:
+    api_key = _provider_key("gemini")
+    model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash") or "gemini-3.5-flash"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.2, "responseMimeType": "application/json"},
+    }
+    with httpx.Client(timeout=60.0) as client:
+        response = client.post(url, json=payload, headers={"x-goog-api-key": api_key})
+    if response.status_code != 200:
+        logger.warning("Gemini API returned HTTP %s", response.status_code)
+        raise RuntimeError("Gemini request failed")
+    content = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+    return _parse_dag(json.loads(content))

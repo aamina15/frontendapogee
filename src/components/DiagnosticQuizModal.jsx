@@ -164,7 +164,7 @@ export default function DiagnosticQuizModal({
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-6 flex flex-col gap-6">
-      <p role="status" className="text-sm text-on-surface-variant">{questions.some(q => q.source === 'gemini') ? 'Includes validated AI question proposals.' : questions.some(q => q.source === 'legacy_bank') ? 'Previously saved assessment; question relevance has not been revalidated.' : 'Saved skill-specific question bank; no live AI generation is claimed.'} Questions are graded on the server. {uncovered.length > 0 && `No reliable questions available for: ${uncovered.join(', ')}. These skills remain UNASSESSED.`}</p>
+      <p role="status" className="text-sm text-on-surface-variant">{questions.some(q => q.source === 'openai' || q.source === 'gemini') ? `Includes validated AI question proposals from ${questions.some(q => q.source === 'openai') ? 'OpenAI' : 'Gemini'}.` : questions.some(q => q.source === 'legacy_bank') ? 'Previously saved assessment; question relevance has not been revalidated.' : 'Saved skill-specific question bank; no live AI generation is claimed.'} Questions are graded on the server. {uncovered.length > 0 && `No reliable questions available for: ${uncovered.join(', ')}. These skills remain UNASSESSED.`}</p>
       {/* Step 2 Progress Header */}
       <section className="w-full">
         <div className="grid grid-cols-4 gap-3">
