@@ -207,6 +207,7 @@ export default function App() {
           {apiStatus === 'offline' && <div role="alert" className="p-4 text-amber-300">Backend unavailable. Your saved progress will load when the connection returns. <button onClick={restore} className="underline">Retry connection</button></div>}
           {step === 1 && <IntakeScreen key={intakeKey} currentProfile={newGoalIntent ? null : profile} onSelectProfile={setProfileId} onStartDiagnostic={start} busy={busy} error={error} savedGoal={hasSavedProgress ? goal : null} onResume={handleStartLearning} restoring={restoring} />}
           {step > 1 && info && <p role="status" className="max-w-6xl mx-auto px-4 pt-4 text-sm text-secondary">{info}</p>}
+          {step > 1 && graph?.source && graph.source !== 'fallback' && <p role="status" className="max-w-6xl mx-auto px-4 pt-4 text-sm text-secondary">AI-generated skill graph · {graph.source === 'openai' ? 'OpenAI' : graph.source === 'gemini' ? 'Gemini' : graph.source}</p>}
           {step > 1 && graph?.warning && <p role="status" className="max-w-6xl mx-auto p-4 text-amber-300">{graph.warning}</p>}
           {step > 1 && graph?.validation?.repaired && <p role="status" className="max-w-6xl mx-auto p-4 text-amber-300">A cycle in the generated graph was repaired before saving.</p>}
           {step === 2 && <>
